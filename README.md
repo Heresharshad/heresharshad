@@ -1,46 +1,53 @@
-# heresharshad.com coming soon page
+# heresharshad.com
 
-A single-file, dependency-free coming soon page for heresharshad.com.
-Everything lives in `index.html`. The page is HTML, CSS and a small amount of vanilla JavaScript (dark mode is a glossy black, light mode a paper-white drafting table); there is no build step and no framework.
+Personal portfolio for Harshad, built with Next.js. The homepage is the original "dark room with a pull-chain lamp" page, migrated into React; About, Work, Experiments and Contact pages sit alongside it.
 
-## Files
+> **The current theme and global styling are temporary. The website will receive a future visual redesign, so avoid introducing a large design system or treating the current CSS as permanent architecture.**
 
-- `index.html` : the page (HTML, CSS and JS in one file)
-- `CNAME` : tells GitHub Pages to serve the site at heresharshad.com
-- `.nojekyll` : stops GitHub from running Jekyll on the repo
-- `README.md` : this file
+## Stack
 
-## Publish on GitHub Pages
+Next.js (App Router) · React · TypeScript · Tailwind CSS v4 · shadcn/ui · GSAP + `@gsap/react` · Three.js + React Three Fiber + Drei · Remix Icon (`@remixicon/react`, re-exported from `src/components/icons.tsx`)
 
-1. Create a new public repository on GitHub, for example `heresharshad-site`.
-2. Upload these files to the root of the repo (drag and drop in the browser works, or use git):
+## Commands
 
-       git init
-       git add .
-       git commit -m "Coming soon page"
-       git branch -M main
-       git remote add origin https://github.com/YOUR-USERNAME/heresharshad-site.git
-       git push -u origin main
+```bash
+npm install        # install dependencies
+npm run dev        # dev server at http://localhost:3000
+npm run lint       # ESLint
+npx tsc --noEmit   # type check
+npm run build      # production build
+npm run start      # serve the production build
+```
 
-3. In the repo, open Settings, then Pages. Under "Build and deployment", set Source to "Deploy from a branch", pick `main` and `/ (root)`, and save.
-4. Still on the Pages screen, confirm the custom domain shows `heresharshad.com` (the CNAME file fills this in). Tick "Enforce HTTPS" once the certificate is issued, usually within an hour.
+## Structure
 
-## Point the domain at GitHub
+```text
+src/
+├── app/
+│   ├── layout.tsx, globals.css, home.css   root layout, global + homepage styles
+│   ├── page.tsx                            homepage
+│   ├── (site)/                             pages that share header/footer
+│   │   ├── about/ work/ work/[slug]/ experiments/ contact/
+│   │   └── layout.tsx, loading.tsx
+│   ├── not-found.tsx, error.tsx            404 and error states
+├── components/
+│   ├── home/        homepage scene, composition, pendant lamp
+│   ├── layout/      header, footer, nav, page heading
+│   ├── experiments/ Three.js demos + registry
+│   ├── work/        project card
+│   └── ui/          shadcn/ui components
+├── config/site.ts   site info, nav, social links
+├── data/projects.ts project data
+├── hooks/, lib/, types/
+public/              static assets
+```
 
-In your domain registrar's DNS settings add:
+## Where things live
 
-| Type  | Host | Value                  |
-|-------|------|------------------------|
-| A     | @    | 185.199.108.153        |
-| A     | @    | 185.199.109.153        |
-| A     | @    | 185.199.110.153        |
-| A     | @    | 185.199.111.153        |
-| CNAME | www  | YOUR-USERNAME.github.io |
-
-DNS can take anywhere from a few minutes to a day to propagate. GitHub's current list of IPs is in their docs at docs.github.com/pages if these ever change.
-
-## Editing the page
-
-- Headline, intro text and the two contact buttons are near the bottom of the `<body>` in `index.html`.
-- Colours are CSS variables at the top of the `<style>` block: the `:root` set is dark mode, the `html.lights-on` set is light mode.
-- Two modes. Dark is the default; pulling (or clicking) the brass pull chain on the pendant at the top right turns the lights on, which swaps the CSS variables under `html.lights-on` and starts the grid runners drawn on the `#runners` canvas. The pendant is the inline SVG inside `.lamp`; the pull chain is the `.cord` button and its length is `--cord`. Contact links live in the `.contact` block at the bottom right. Runner count, speed and colour are in the `spawn()` and `stepRunners()` functions.
+- **New page:** add `src/app/(site)/<name>/page.tsx` (gets the header/footer), and a link in `navLinks` in `src/config/site.ts`.
+- **Projects:** `src/data/projects.ts`. Set `caseStudy: true` to get a `/work/[slug]` page. Unknown slugs return a 404. While the list is empty, `/work` shows an "under construction" message.
+- **Social links and email:** `src/config/site.ts`. Unset (`null`) links are hidden and flagged on the contact page.
+- **Homepage styles:** `src/app/home.css` (migrated unchanged from the original `index.html`); colour variables in `src/app/globals.css`.
+- **Homepage behaviour** (light, runners, pendant): `src/components/home/home-scene.tsx`, a vanilla port of the original script with cleanup.
+- **GSAP:** page reveal in `src/lib/animations/use-page-reveal.ts`; mark elements with `data-reveal`.
+- **Three.js:** experiments in `src/components/experiments/`; register new ones in `registry.tsx`. Scenes load client-side only and respect reduced motion.

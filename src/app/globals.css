@@ -1,0 +1,136 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "./home.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * TEMPORARY THEME: the dark "tungsten light" look from the original homepage.
+ * The site will be redesigned later; keep this small and easy to replace.
+ */
+:root {
+  --ground: #060606;
+  --ash: #262626;
+  --ash-2: #606060;
+  --ink: #f3ede2;
+  --accent: #ffd9a0;
+  --accent-rgb: 255, 217, 160;
+  --grid-rgb: 255, 217, 160;
+  --grid-a: 0.045;
+  --pad-x: clamp(40px, 5.5vw, 88px);
+  --pad-y: clamp(60px, 8vh, 84px);
+  --lx: 50vw;
+  --ly: 50vh;
+  --r: 440px;
+  --a: 0deg;
+  --cord: 150px;
+
+  /* shadcn/ui tokens, mapped onto the theme above */
+  --background: var(--ground);
+  --foreground: var(--ink);
+  --card: #0d0d0d;
+  --card-foreground: var(--ink);
+  --popover: #0d0d0d;
+  --popover-foreground: var(--ink);
+  --primary: var(--accent);
+  --primary-foreground: #060606;
+  --secondary: var(--ash);
+  --secondary-foreground: var(--ink);
+  --muted: var(--ash);
+  --muted-foreground: #8a8a8a;
+  --accent-foreground: #060606;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: rgba(var(--accent-rgb), 0.16);
+  --input: rgba(var(--accent-rgb), 0.2);
+  --ring: var(--accent);
+  --radius: 0.25rem;
+}
+
+/* Light mode, only ever applied by the homepage pendant (see home-scene.tsx). */
+html.lights-on {
+  --ground: #f1f2f0;
+  --ash: #d6d8d3;
+  --ash-2: #6b6e68;
+  --ink: #141414;
+  --accent: #2238d6;
+  --accent-rgb: 34, 56, 214;
+  --grid-rgb: 20, 20, 20;
+  --grid-a: 0.08;
+  --primary-foreground: #f1f2f0;
+  --accent-foreground: #f1f2f0;
+  --card: #f7f7f5;
+  --popover: #f7f7f5;
+  --muted-foreground: #6b6e68;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --font-heading: var(--font-sans);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body {
+    @apply bg-background text-foreground min-h-dvh antialiased;
+    line-height: 1.4;
+    transition: background-color 500ms ease, color 500ms ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body {
+      transition: none;
+    }
+  }
+}
+
+/* Shared by inner pages. The blueprint grid itself is in home.css. */
+.page-wordmark {
+  font-weight: 900;
+  font-stretch: 125%;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+}
+
+.blueprint-cover {
+  background-image:
+    linear-gradient(rgba(var(--grid-rgb), var(--grid-a)) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--grid-rgb), var(--grid-a)) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.construction-tape {
+  background: repeating-linear-gradient(-45deg, var(--accent) 0 14px, var(--ground) 14px 28px);
+  opacity: 0.85;
+}
