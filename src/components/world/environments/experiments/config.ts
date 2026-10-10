@@ -25,21 +25,27 @@ export const DOOR = {
   recess: 0.32,
 };
 
-/** The room's envelope behind the wall. */
-export const ROOM = {
-  x: [-6.5, 3.5] as const,
-  /** Front face of the room's own wall (the back of the studio wall) and the far wall. */
-  z: [WALL_Z - DOOR.depth, -17] as const,
-  y: [FLOOR_Y, 3.0] as const,
+/**
+ * The void behind the wall: no envelope, just the extent the backdrop, the
+ * floor grid and the motes fill. It starts at the back of the studio wall, so
+ * nothing of it shows in the studio except through the opening.
+ */
+export const VOID = {
+  x: [-30, 30] as const,
+  y: [FLOOR_Y - 20, 22] as const,
+  z: [WALL_Z - DOOR.depth - 0.05, -55] as const,
 };
 
-/** The fluorescent batten on the far wall: left of centre, on standoffs, the glass this far off the wall. */
-export const TUBE = { x: -2.7, y: 1.45, z: ROOM.z[1] + 0.16, length: 3.6 };
-/** The far wall steps back to the right of this line, behind a full-height reveal. */
-export const STEP = { x: 0.45, depth: 0.55 };
+/**
+ * The two glows the haze gathers around. The key, in the accent, hangs up and
+ * left behind the heading (which takes its light from it); the counter, cold
+ * and fainter, sits low and right to give the dark some depth.
+ */
+export const GLOW = { x: -2.7, y: 1.45, z: -17 };
+export const COUNTER = { x: 7.5, y: -3.2, z: -24 };
 
 export function restPose({ narrow }: Viewport): CameraPose {
-  // low and looking slightly down: the floor, the warm strip and the lit far wall all in frame
+  // low and looking slightly down: the grid runs off to its horizon under the key glow
   return narrow
     ? { pos: [-2.3, -0.8, -5.4], look: [-2.1, -1.4, -17], fov: 50 }
     : { pos: [-2.0, -0.9, -6.2], look: [-1.3, -1.5, -17], fov: 42 };
