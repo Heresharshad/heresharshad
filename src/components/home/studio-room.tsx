@@ -54,8 +54,16 @@ function useNotes() {
   return notes;
 }
 
-export function StudioRoom({ high, sharedRef }: { high: boolean; sharedRef: RefObject<{ out: BulbOut }> }) {
-  const wall = useMemo(() => tileMaterial("wall", { wallZ: WALL_Z, floorY: FLOOR_Y }), []);
+type StudioRoomProps = {
+  high: boolean;
+  sharedRef: RefObject<{ out: BulbOut }>;
+  /** The cladding, when something else (the concealed doorway) shares it. */
+  wallMaterial?: THREE.Material;
+};
+
+export function StudioRoom({ high, sharedRef, wallMaterial }: StudioRoomProps) {
+  const ownWall = useMemo(() => wallMaterial ?? tileMaterial("wall", { wallZ: WALL_Z, floorY: FLOOR_Y }), [wallMaterial]);
+  const wall = ownWall;
   const floorTiles = useMemo(() => tileMaterial("floor", { wallZ: WALL_Z, floorY: FLOOR_Y }), []);
   const floorNoise = useMemo(() => noiseTexture(256, 6), []);
   const notes = useNotes();
@@ -73,11 +81,11 @@ export function StudioRoom({ high, sharedRef }: { high: boolean; sharedRef: RefO
 
   useEffect(
     () => () => {
-      wall.dispose();
+      if (!wallMaterial) wall.dispose();
       floorTiles.dispose();
       floorNoise.dispose();
     },
-    [wall, floorTiles, floorNoise],
+    [wall, wallMaterial, floorTiles, floorNoise],
   );
 
   return (

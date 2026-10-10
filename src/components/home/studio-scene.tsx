@@ -1,13 +1,16 @@
 "use client";
 
-import { useRef, useState, type RefObject } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Environment, Lightformer, PerformanceMonitor } from "@react-three/drei";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { StudioDoor } from "@/components/world/environments/studio-door";
+import { world } from "@/components/world/store";
+import type { EnvironmentProps } from "@/components/world/types";
 import { Mechanism, type Mech } from "./mechanism";
 import { Pendant, type BulbOut, type Rig } from "./pendant";
 import type { StudioState } from "./studio-state";
-import { StudioRoom, WALL_Z } from "./studio-room";
+import { FLOOR_Y, StudioRoom, WALL_Z } from "./studio-room";
+import { tileMaterial } from "./studio-tiles";
 import { CursorLight } from "./cursor-light";
 
 type V3 = [number, number, number];
@@ -26,10 +29,10 @@ const WIDE: Key[] = [
   { cam: [0.35, 0.5, 10.8], look: [0.3, -0.7, 0], ring: [0.5, 0.45] },
   { cam: [-0.3, -0.2, 11], look: [-0.3, -1.2, 0], ring: [-0.5, 0.45] },
 ];
-// phones: the rig stays in the top band; sections start below it (see .scene in home.css)
+// phones: the rig stays in the top band, high enough that the chain clears the name; sections start below it (see .scene in home.css)
 const NARROW: Key[] = [
-  { cam: [0, 0.3, 9], look: [0, 0, 0], ring: [0.05, 0.66] },
-  { cam: [0, 1, 12.5], look: [0, -1.2, 0], ring: [-0.2, 0.64] },
+  { cam: [0, 0.3, 9], look: [0, 0, 0], ring: [0.05, 0.78] },
+  { cam: [0, 1, 12.5], look: [0, -1.2, 0], ring: [-0.2, 0.72] },
   { cam: [0.2, 0.6, 11.5], look: [0.15, -0.8, 0], ring: [0.38, 0.62] },
   { cam: [-0.2, 0.6, 11.5], look: [-0.15, -0.8, 0], ring: [-0.38, 0.62] },
   { cam: [0.2, 0.4, 11.5], look: [0.15, -0.9, 0], ring: [0.38, 0.62] },
@@ -162,6 +165,8 @@ function CameraRig({ stateRef, sharedRef }: { stateRef: RefObject<StudioState>; 
     t.py = rm ? 0 : damp(t.py, p.y * hand, 1.6, dt);
     t.intro = rm ? 0 : damp(t.intro, 0, 0.9, dt);
     t.push = rm ? 0 : damp(t.push, state.on ? 1 : 0, 1.4, dt);
+    // while a journey through the wall runs, the world's transition path holds the camera
+    if (world.get().cameraLocked) return;
     camera.fov = fov;
     camera.aspect = base.aspect;
     camera.updateProjectionMatrix();
@@ -217,10 +222,14 @@ function CameraRig({ stateRef, sharedRef }: { stateRef: RefObject<StudioState>; 
   return null;
 }
 
-export type StudioCanvasProps = { stateRef: RefObject<StudioState>; high: boolean; reduceMotion: boolean };
-
-export default function StudioCanvas({ stateRef, high, reduceMotion }: StudioCanvasProps) {
-  const [dpr, setDpr] = useState(() => Math.min(window.devicePixelRatio || 1, high ? 1.75 : 1.4));
+/**
+ * The studio as a room of the shared world: everything the homepage canvas
+ * used to hold, minus the canvas, lights and fog, which the world owns. The
+ * DOM half (scroll, pointer, the chain) writes into `world.studio`, so the
+ * scene outlives the page while the camera leaves through the wall.
+ */
+export default function StudioScene({ high, onReady }: EnvironmentProps) {
+  const stateRef = useRef<StudioState>(world.get().studio);
   const sharedRef = useRef<Shared>({
     rig: { anchor: new THREE.Vector3(2, 4, 0), cordLength: 3 },
     out: { filament: new THREE.Vector3(2, 0, 0), level: 0 },
@@ -236,40 +245,22 @@ export default function StudioCanvas({ stateRef, high, reduceMotion }: StudioCan
       scene: 0,
     },
   });
+  // the cladding is shared by the wall and the doorway cut into it
+  const wall = useMemo(() => tileMaterial("wall", { wallZ: WALL_Z, floorY: FLOOR_Y }), []);
+  useEffect(() => () => wall.dispose(), [wall]);
+  useEffect(() => {
+    onReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <Canvas
-      className="studio-canvas"
-      aria-hidden="true"
-      dpr={dpr}
-      shadows={high ? "percentage" : false}
-      frameloop={reduceMotion ? "demand" : "always"}
-      gl={{ antialias: high, powerPreference: "high-performance" }}
-      camera={{ fov: 30, near: 0.1, far: 80, position: [0, 0.3, 8] }}
-      onCreated={({ gl, invalidate }) => {
-        gl.toneMappingExposure = 1.05;
-        stateRef.current.wake = () => invalidate();
-      }}
-    >
-      <color attach="background" args={["#060606"]} />
-      <fog attach="fog" args={["#060606", 14, 34]} />
-      <PerformanceMonitor onDecline={() => setDpr(1)} />
-
-      {/* reflections only: a soft window top-left and a warm card on the right, rendered once */}
-      <Environment frames={1} resolution={64}>
-        <Lightformer form="rect" intensity={1.2} position={[-5, 4, 5]} scale={[4, 6, 1]} />
-        <Lightformer form="rect" intensity={0.4} position={[5, 0, 4]} scale={[1.5, 6, 1]} color="#ffd29e" />
-      </Environment>
-      {/* a cool, almost-nothing fill so the darkness has form */}
-      <hemisphereLight args={["#27303f", "#000000", 0.22]} />
-      {/* rim light from behind-left picks out the edges of brass and glass */}
-      <directionalLight position={[-6, 3, -3]} intensity={0.3} color="#a9bad4" />
-
+    <>
       <CameraRig stateRef={stateRef} sharedRef={sharedRef} />
       <CursorLight stateRef={stateRef} sharedRef={sharedRef} />
-      <StudioRoom high={high} sharedRef={sharedRef} />
+      <StudioRoom high={high} sharedRef={sharedRef} wallMaterial={wall} />
+      <StudioDoor high={high} wallMaterial={wall} />
       <Mechanism stateRef={stateRef} sharedRef={sharedRef} high={high} />
       <Pendant stateRef={stateRef} sharedRef={sharedRef} high={high} />
-    </Canvas>
+    </>
   );
 }

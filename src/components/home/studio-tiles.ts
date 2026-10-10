@@ -164,7 +164,21 @@ const KNEE = { start: 1.6, span: 0.9 };
 const INDIRECT = 0.4;
 
 type Kind = "wall" | "floor";
-export type TileUniforms = { uBulb: { value: THREE.Vector3 }; uBulbLevel: { value: number } };
+/** Per-room tuning: the cladding is the same system, the material is not. */
+export type TileOptions = {
+  color?: string;
+  roughness?: number;
+  /** The colour the floor layer throws back from the lit lower wall (the bulb's tungsten by default). */
+  bounce?: [number, number, number];
+};
+export type TileUniforms = {
+  uBulb: { value: THREE.Vector3 };
+  uBulbLevel: { value: number };
+  /** A doorway cut out of the wall: centre x, sill y, width, height. Width 0: no door. */
+  uDoor: { value: THREE.Vector4 };
+  /** Subtracted from the world position before setting out: a slab that moves keeps its own panels. */
+  uTileOffset: { value: THREE.Vector3 };
+};
 
 /**
  * Wall: an opaque stone material. Floor: a transparent layer over the
@@ -172,16 +186,19 @@ export type TileUniforms = { uBulb: { value: THREE.Vector3 }; uBulbLevel: { valu
  * wall and the warm light the lit wall throws back down), so the polished
  * floor and its reflections show through between them.
  */
-export function tileMaterial(kind: Kind, origin: { wallZ: number; floorY: number }) {
+export function tileMaterial(kind: Kind, origin: { wallZ: number; floorY: number }, opts: TileOptions = {}) {
   const wall = kind === "wall";
+  const bounceColor = opts.bounce ?? [1.0, 0.62, 0.34];
   const uniforms = {
     uRoomOrigin: { value: new THREE.Vector2(origin.wallZ, origin.floorY) },
     uBulb: { value: new THREE.Vector3(0, 0, 0) },
     uBulbLevel: { value: 0 },
+    uDoor: { value: new THREE.Vector4(0, 0, 0, 0) },
+    uTileOffset: { value: new THREE.Vector3(0, 0, 0) },
   };
   const mat = new THREE.MeshStandardMaterial({
-    color: wall ? "#171513" : "#121110",
-    roughness: wall ? 0.68 : 0.7,
+    color: opts.color ?? (wall ? "#171513" : "#121110"),
+    roughness: opts.roughness ?? (wall ? 0.68 : 0.7),
     metalness: 0,
     // the environment map is for reflections on brass and glass, not to light the room
     envMapIntensity: 0.03,
@@ -195,6 +212,8 @@ export function tileMaterial(kind: Kind, origin: { wallZ: number; floorY: number
 
   const color = wall
     ? /* glsl */ `
+      // the concealed doorway: the wall simply is not there, the slab and jambs fill it
+      if (uDoor.z > 0.0 && abs(vRoomPos.x - uDoor.x) < uDoor.z * 0.5 && vRoomPos.y > uDoor.y - 0.01 && vRoomPos.y < uDoor.y + uDoor.w) discard;
       diffuseColor.rgb *= tile.tone * mix(1.0, 0.5, tile.joint) * mix(1.0, 1.2, tile.wear);
       // the corner where wall meets floor collects shadow
       diffuseColor.rgb *= mix(0.28, 1.0, smoothstep(0.0, 1.8, vRoomPos.y - uRoomOrigin.y));`
@@ -229,7 +248,7 @@ export function tileMaterial(kind: Kind, origin: { wallZ: number; floorY: number
         float onWall = max(toBulb.z, 0.0) / (r * r * r);
         float away = (vRoomPos.z - uRoomOrigin.x) / 1.1;
         // the corner itself stays occluded, so the bounce gathers a little way out from the wall
-        vec3 b = vec3(1.0, 0.62, 0.34) * uBulbLevel * onWall * 0.08 * (1.0 - 0.7 * ao) / (1.0 + away * away);
+        vec3 b = vec3(${glslFloats(bounceColor)}) * uBulbLevel * onWall * 0.08 * (1.0 - 0.7 * ao) / (1.0 + away * away);
         #ifdef USE_FOG
           b *= 1.0 - fogFactor;
         #endif
@@ -247,13 +266,13 @@ export function tileMaterial(kind: Kind, origin: { wallZ: number; floorY: number
         vRoomNormal = normalize(mat3(modelMatrix) * objectNormal);`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n${TILE_CHUNK}\nuniform vec3 uBulb;\nuniform float uBulbLevel;`)
+      .replace("#include <common>", `#include <common>\n${TILE_CHUNK}\nuniform vec3 uBulb;\nuniform float uBulbLevel;\nuniform vec4 uDoor;\nuniform vec3 uTileOffset;`)
       .replace(
         "#include <color_fragment>",
         `#include <color_fragment>
         vec3 roomN = normalize(vRoomNormal);
         vec3 roomT, roomB;
-        Tile tile = tileSurface(roomUV(vRoomPos, roomN, roomT, roomB));
+        Tile tile = tileSurface(roomUV(vRoomPos - uTileOffset, roomN, roomT, roomB));
         ${color}`,
       )
       .replace(

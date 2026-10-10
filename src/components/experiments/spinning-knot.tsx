@@ -5,17 +5,10 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { Mesh } from "three";
 import { usePrefersReducedMotion } from "@/hooks/use-media-query";
+import { hasWebGL } from "@/components/world/device";
 
 const ACCENT = "#FFD9A0";
 
-function hasWebGL() {
-  try {
-    const c = document.createElement("canvas");
-    return !!(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
 const noopSubscribe = () => () => {};
 
 function Knot({ animate }: { animate: boolean }) {

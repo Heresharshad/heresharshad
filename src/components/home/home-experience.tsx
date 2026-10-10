@@ -1,44 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { usePrefersReducedMotion } from "@/hooks/use-media-query";
-import { createStudioState, type StudioState } from "./studio-state";
+import { detectTier } from "@/components/world/device";
+import { world } from "@/components/world/store";
+import type { Tier } from "@/components/world/types";
+import { useDeclareEnvironment } from "@/components/world/use-environment";
+import type { StudioState } from "./studio-state";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
-const StudioCanvas = dynamic(() => import("./studio-canvas"), { ssr: false });
-
-type Tier = "none" | "low" | "high";
-
-/** WebGL support and a rough device class: low-power devices get a simpler scene. */
-function detectTier(): Tier {
-  try {
-    const c = document.createElement("canvas");
-    if (!(c.getContext("webgl2") || c.getContext("webgl"))) return "none";
-  } catch {
-    return "none";
-  }
-  const nav = navigator as Navigator & { deviceMemory?: number };
-  const coarse = window.matchMedia("(pointer: coarse)").matches;
-  const small = Math.min(window.screen.width, window.screen.height) < 700;
-  const weak = (nav.hardwareConcurrency ?? 8) <= 4 || (nav.deviceMemory ?? 8) < 4;
-  return coarse || small || weak ? "low" : "high";
-}
 const noopSubscribe = () => () => {};
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /**
- * Client half of the homepage. Owns the WebGL studio and everything that talks
- * to it: scroll position (as a scene index), the pointer, the pull chain and
- * the custom cursor. The page content itself is server-rendered markup.
+ * Client half of the homepage. Declares the studio as this page's room in the
+ * shared world (src/components/world) and owns everything that talks to it:
+ * scroll position (as a scene index), the pointer, the pull chain and the
+ * custom cursor. The page content itself is server-rendered markup.
  */
 export function HomeExperience() {
-  const stateRef = useRef<StudioState>(createStudioState());
+  const stateRef = useRef<StudioState>(world.get().studio);
   const tier = useSyncExternalStore(noopSubscribe, detectTier, () => "none" as Tier);
+  useDeclareEnvironment("studio");
   const reduceMotion = usePrefersReducedMotion();
   const chainRef = useRef<HTMLButtonElement>(null);
   const dotRef = useRef<HTMLDivElement>(null);
@@ -94,7 +81,7 @@ export function HomeExperience() {
     let start: { x: number; y: number } | null = null;
     let pointerUsed = false;
     // relative to the canvas, which is sized to the large viewport on mobile
-    const viewH = () => document.querySelector(".studio-canvas")?.clientHeight || window.innerHeight;
+    const viewH = () => document.querySelector(".world-canvas")?.clientHeight || window.innerHeight;
     const toNdc = (e: PointerEvent) => ({ x: (e.clientX / window.innerWidth) * 2 - 1, y: -(e.clientY / viewH()) * 2 + 1 });
     chain.addEventListener(
       "pointerdown",
@@ -207,6 +194,7 @@ export function HomeExperience() {
       ac.abort();
       state.drag = null;
       state.on = false;
+      state.scene = 0;
       root.classList.remove("studio-on");
     };
   }, [tier]);
@@ -284,7 +272,7 @@ export function HomeExperience() {
 
   return (
     <>
-      {tier !== "none" ? <StudioCanvas stateRef={stateRef} high={tier === "high"} reduceMotion={reduceMotion} /> : <div className="studio-fallback" aria-hidden="true" />}
+      {tier === "none" && <div className="studio-fallback" aria-hidden="true" />}
       <div className="studio-grain" aria-hidden="true" />
       <div className="frame-marks" aria-hidden="true">
         <i />

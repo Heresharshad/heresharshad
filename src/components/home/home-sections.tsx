@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { ArrowUpRight, socialIcons } from "@/components/icons";
+import { TransitionLink } from "@/components/world/transition-link";
 import { experiments } from "@/components/experiments/registry";
 import { site, socials } from "@/config/site";
 import { projects } from "@/data/projects";
 
 /*
  * The homepage content, server-rendered. Each [data-scene] is one stop for the
- * camera and the bulb (see studio-canvas.tsx); content sits on the side of the
+ * camera and the bulb (see studio-scene.tsx); content sits on the side of the
  * frame the bulb is not on: work left, experiments right, about left, contact right.
+ * Links into other rooms of the world (TransitionLink) leave through the wall.
  */
 
 function SceneHead({ index, label }: { index: string; label: string }) {
@@ -22,10 +24,10 @@ function SceneHead({ index, label }: { index: string; label: string }) {
 
 function MoreLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link href={href} className="more-link">
+    <TransitionLink href={href} className="more-link">
       {children}
       <ArrowUpRight className="size-4" aria-hidden="true" />
-    </Link>
+    </TransitionLink>
   );
 }
 
@@ -131,11 +133,11 @@ export function ExperimentsScene() {
       <ol className="index-list">
         {experiments.map((e, i) => (
           <li key={e.slug}>
-            <Link href="/experiments">
+            <TransitionLink href="/experiments">
               <span className="index-num">E.{String(i + 1).padStart(2, "0")}</span>
               <span className="index-title">{e.title}</span>
               <span className="index-tags">{e.tags.join(" · ")}</span>
-            </Link>
+            </TransitionLink>
             <p className="index-desc">{e.description}</p>
           </li>
         ))}

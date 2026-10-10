@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, IBM_Plex_Mono } from "next/font/google";
+import { WorldLayer } from "@/components/world/world-layer";
 import { site } from "@/config/site";
 import "./globals.css";
 
@@ -42,7 +43,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${archivo.variable} ${plexMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        {/* the one WebGL world, shared by the homepage studio and the rooms behind its wall */}
+        <WorldLayer />
+        {children}
+      </body>
     </html>
   );
 }
