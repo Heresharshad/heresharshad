@@ -1,6 +1,14 @@
-export function UnderConstruction({ title, children }: { title: string; children: React.ReactNode }) {
+export function UnderConstruction({
+  title,
+  children,
+  className = "max-w-2xl bg-card",
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <section className="max-w-2xl overflow-hidden rounded-sm border bg-card" data-reveal>
+    <section className={`overflow-hidden rounded-sm border ${className}`} data-reveal>
       <div className="construction-tape h-3" aria-hidden="true" />
       <div className="space-y-3 p-6 sm:p-8">
         <p className="text-xs uppercase tracking-[0.14em] text-accent">Under construction</p>

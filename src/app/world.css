@@ -65,12 +65,34 @@ html[data-world] .room-fallback { display: none; }
 html:not([data-world]) .room-title { --li: 1; --lx: 35%; --ly: -60%; }
 .room-lede { color: #b6bdc7; }
 .room-eyebrow { color: #98a1ac; }
+/* the page's name on one line: sized to the width it has (--wordmark-em: the word's width in ems, 9.5 for EXPERIMENTS in Archivo at 125%) */
+.room-wordmark { font-size: min(84px, calc((100vw - 2 * var(--pad-x)) / var(--wordmark-em, 9.8))); white-space: nowrap; }
 /* content on dark glass: the room shows through, the type stays readable */
 .room-card {
-  background: rgba(7, 7, 7, 0.72); border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(6, 9, 15, 0.78); border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
-.room-card-cover { background: #0a0a0a; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+
+/* ---- experiments (src/components/experiments/experiment-card.tsx) ---- */
+.exp-meta { font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: #8b94a0; }
+/* the whole card in one screen: as tall as the window allows below the page's heading; longer copy makes it taller rather than clipping */
+@media (min-width: 1024px) {
+  .exp-card { min-height: clamp(500px, calc(100svh - 22rem), 560px); }
+}
+/* the demo in a viewfinder */
+.exp-stage { background: #07090d; }
+.exp-label { position: absolute; z-index: 1; margin: 0; pointer-events: none; font: 500 10px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(243, 237, 226, 0.62); }
+.exp-corner { position: absolute; z-index: 1; width: 14px; height: 14px; pointer-events: none; border: 0 solid rgba(243, 237, 226, 0.4); }
+.exp-corner-tl { left: 12px; top: 12px; border-width: 1px 0 0 1px; }
+.exp-corner-tr { right: 12px; top: 12px; border-width: 1px 1px 0 0; }
+.exp-corner-bl { left: 12px; bottom: 12px; border-width: 0 0 1px 1px; }
+.exp-corner-br { right: 12px; bottom: 12px; border-width: 0 1px 1px 0; }
+/* a place kept for an experiment still to come */
+.exp-slot { border: 1px dashed rgba(255, 255, 255, 0.16); background: rgba(6, 9, 15, 0.4); }
+.exp-slot-num {
+  font-weight: 900; font-stretch: 125%; font-size: clamp(44px, 12vw, 64px); line-height: 0.9; letter-spacing: -0.02em;
+  color: transparent; -webkit-text-stroke: 1px rgba(255, 255, 255, 0.2);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .world-canvas, .room-shell > header { transition: none; animation: none; }
