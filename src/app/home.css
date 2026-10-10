@@ -386,7 +386,17 @@ html:has(.intro[data-on][data-js]:not(.is-revealing)) { overflow: hidden; }
   --intro-r: 190vmax; opacity: 0; pointer-events: none;
   transition: --intro-r 1.5s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.5s ease 1.1s;
 }
-.intro.is-revealing .intro-panel, .intro.is-revealing @media (prefers-reduced-motion: reduce) {
+.intro.is-revealing .intro-panel { opacity: 0; transition: opacity 0.4s ease; }
+.intro.is-revealing .intro-bulb { opacity: 0; transition: opacity 0.9s ease 0.2s; }
+
+@keyframes intro-in { from { opacity: 0; } }
+@keyframes intro-breathe { from { opacity: 0.45; transform: scale(0.92); } to { opacity: 1; transform: scale(1.04); } }
+@keyframes intro-run { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
+
+@media (max-aspect-ratio: 85/100) and (max-width: 899px) {
+  .intro[data-on] { --bx: 52.5%; --by: 32%; }
+}
+@media (prefers-reduced-motion: reduce) {
   .intro-bulb, .intro-bulb::before, .intro-panel { animation: none; }
   .intro-line::after { animation: none; left: 36%; }
   .intro.is-revealing { --intro-r: 0px; transition: opacity 0.3s ease; }
