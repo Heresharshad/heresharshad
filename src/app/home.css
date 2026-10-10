@@ -321,8 +321,8 @@ html[data-world-leaving] .cursor-ring, html[data-world-leaving] .cursor-dot { op
 }
 
 /* ---- the first visit's loader (src/components/home/intro-curtain.tsx) ----
- * Off unless the inline script switched it on during parsing (data-on). A cord
- * and a warming filament where the pendant will hang, the status bottom left
+ * Off unless the inline script switched it on during parsing (data-on). A
+ * warming filament where the pendant will hang, the status bottom left
  * where the hero's meta sits. Revealed from the bulb outwards (--intro-r). */
 @property --intro-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
 .intro { display: none; }
@@ -342,11 +342,6 @@ html[data-world-leaving] .cursor-ring, html[data-world-leaving] .cursor-dot { op
 html:has(.intro[data-on]) { scrollbar-gutter: stable; }
 html:has(.intro[data-on][data-js]:not(.is-revealing)) { overflow: hidden; }
 
-.intro-cord {
-  position: absolute; left: var(--bx); top: 0; width: 1px; height: calc(var(--by) - 9px);
-  background: linear-gradient(rgba(243, 237, 226, 0), rgba(243, 237, 226, 0.22) 40%, rgba(243, 237, 226, 0.3));
-  transform-origin: top; animation: intro-drop 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
 .intro-bulb {
   position: absolute; left: var(--bx); top: var(--by); width: 9px; height: 13px; margin: -6px 0 0 -4.5px;
   border-radius: 45% 45% 50% 50%; background: radial-gradient(circle at 50% 60%, #ffe9c8, #c99a62 70%);
@@ -391,19 +386,8 @@ html:has(.intro[data-on][data-js]:not(.is-revealing)) { overflow: hidden; }
   --intro-r: 190vmax; opacity: 0; pointer-events: none;
   transition: --intro-r 1.5s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.5s ease 1.1s;
 }
-.intro.is-revealing .intro-panel, .intro.is-revealing .intro-cord { opacity: 0; transition: opacity 0.4s ease; }
-.intro.is-revealing .intro-bulb { opacity: 0; transition: opacity 0.9s ease 0.2s; }
-
-@keyframes intro-drop { from { transform: scaleY(0); } }
-@keyframes intro-in { from { opacity: 0; } }
-@keyframes intro-breathe { from { opacity: 0.45; transform: scale(0.92); } to { opacity: 1; transform: scale(1.04); } }
-@keyframes intro-run { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
-
-@media (max-aspect-ratio: 85/100) and (max-width: 899px) {
-  .intro[data-on] { --bx: 52.5%; --by: 32%; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .intro-cord, .intro-bulb, .intro-bulb::before, .intro-panel { animation: none; }
+.intro.is-revealing .intro-panel, .intro.is-revealing @media (prefers-reduced-motion: reduce) {
+  .intro-bulb, .intro-bulb::before, .intro-panel { animation: none; }
   .intro-line::after { animation: none; left: 36%; }
   .intro.is-revealing { --intro-r: 0px; transition: opacity 0.3s ease; }
 }
