@@ -20,11 +20,6 @@
   --grid-a: 0.045;
   --pad-x: clamp(40px, 5.5vw, 88px);
   --pad-y: clamp(60px, 8vh, 84px);
-  --lx: 50vw;
-  --ly: 50vh;
-  --r: 440px;
-  --a: 0deg;
-  --cord: 150px;
 
   /* shadcn/ui tokens, mapped onto the theme above */
   --background: var(--ground);
@@ -45,23 +40,6 @@
   --input: rgba(var(--accent-rgb), 0.2);
   --ring: var(--accent);
   --radius: 0.25rem;
-}
-
-/* Light mode, only ever applied by the homepage pendant (see home-scene.tsx). */
-html.lights-on {
-  --ground: #f1f2f0;
-  --ash: #d6d8d3;
-  --ash-2: #6b6e68;
-  --ink: #141414;
-  --accent: #2238d6;
-  --accent-rgb: 34, 56, 214;
-  --grid-rgb: 20, 20, 20;
-  --grid-a: 0.08;
-  --primary-foreground: #f1f2f0;
-  --accent-foreground: #f1f2f0;
-  --card: #f7f7f5;
-  --popover: #f7f7f5;
-  --muted-foreground: #6b6e68;
 }
 
 @theme inline {
@@ -85,6 +63,7 @@ html.lights-on {
   --color-ring: var(--ring);
   --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
   --font-heading: var(--font-sans);
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -115,7 +94,16 @@ html.lights-on {
   }
 }
 
-/* Shared by inner pages. The blueprint grid itself is in home.css. */
+/* Shared by inner pages. */
+.blueprint-grid {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(var(--grid-rgb), var(--grid-a)) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--grid-rgb), var(--grid-a)) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 20px 20px;
+}
+
 .page-wordmark {
   font-weight: 900;
   font-stretch: 125%;

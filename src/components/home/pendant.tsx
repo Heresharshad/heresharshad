@@ -1,141 +1,369 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import type { Ref, RefObject } from "react";
-import type { LampState } from "./lamp-state";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+import {
+  CHAIN_LENGTH,
+  CHAIN_SEGMENTS,
+  CORD_SEGMENTS,
+  KNOB,
+  LiveTube,
+  PendantSim,
+} from "./pendant-physics";
+import type { StudioState } from "./studio-state";
+import { braidTexture, glowTexture, noiseTexture } from "./studio-textures";
 
-const PendantScene = dynamic(() => import("./pendant-scene"), { ssr: false });
+/** Where the ceiling rail holds the cord, and how much cord is let out. Written by the camera rig. */
+export type Rig = { anchor: THREE.Vector3; cordLength: number };
+/** What the rest of the page needs to know about the bulb, written every frame. */
+export type BulbOut = { filament: THREE.Vector3; level: number };
+
+const DOWN = new THREE.Vector3(0, -1, 0);
+const UP = new THREE.Vector3(0, 1, 0);
+/** Distance from the socket top to the middle of the filament. */
+const FILAMENT_AT = 0.77;
+/** A switched-off filament still holds a faint ember, so the bulb reads in the dark. */
+const EMBER = 0.035;
+/** Warm-up: the filament catches, stutters, then settles. [ms, level] */
+const WARM: [number, number][] = [[0, 0], [90, 0.5], [170, 0.18], [300, 0.85], [390, 0.62], [640, 1]];
+
+function warm(ms: number) {
+  for (let i = 1; i < WARM.length; i++) {
+    if (ms <= WARM[i][0]) {
+      const [t0, v0] = WARM[i - 1];
+      const [t1, v1] = WARM[i];
+      return v0 + (v1 - v0) * ((ms - t0) / (t1 - t0));
+    }
+  }
+  return 1;
+}
+
+/* ---- geometry, built once ---- */
+
+function lathe(profile: [number, number][], segments: number, smooth = 0) {
+  let pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
+  if (smooth) pts = new THREE.SplineCurve(pts).getPoints(smooth).map((p) => new THREE.Vector2(Math.max(0, p.x), p.y));
+  return new THREE.LatheGeometry(pts, segments);
+}
+
+function socketGeometry() {
+  const p: [number, number][] = [[0.0, -0.07], [0.05, -0.075], [0.074, -0.095], [0.085, -0.12]];
+  // knurled rings on the shell
+  for (let y = -0.14; y > -0.37; y -= 0.032) p.push([0.086, y], [0.08, y - 0.012], [0.086, y - 0.022]);
+  p.push([0.088, -0.385], [0.097, -0.4], [0.097, -0.44], [0.072, -0.448], [0.06, -0.452], [0, -0.452]);
+  return lathe(p, 56);
+}
+
+function glassGeometry(segments: number) {
+  return lathe(
+    [
+      [0.062, -0.44], [0.064, -0.5], [0.077, -0.565], [0.112, -0.632], [0.16, -0.71], [0.195, -0.8],
+      [0.205, -0.862], [0.195, -0.93], [0.158, -0.986], [0.098, -1.012], [0.03, -1.02], [0.001, -1.021],
+    ],
+    segments,
+    72,
+  );
+}
+
+/** Edison-style "squirrel cage" filament. */
+function filamentGeometry() {
+  const pts: THREE.Vector3[] = [];
+  const loops = 16;
+  for (let k = 0; k < loops; k++) {
+    const a = (k / loops) * Math.PI * 2;
+    const bottom = k % 2 === 1;
+    const r = bottom ? 0.068 : 0.046;
+    pts.push(new THREE.Vector3(Math.cos(a) * r, bottom ? -0.875 : -0.665, Math.sin(a) * r));
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.2), 220, 0.0042, 5, true);
+}
 
 type PendantProps = {
-  /** Render the WebGL pendant instead of the SVG fallback. */
-  three: boolean;
-  lampState: RefObject<LampState>;
-  reduceMotion: boolean;
-  lampRef: Ref<HTMLDivElement>;
-  swingRef: RefObject<HTMLDivElement | null>;
-  cordRef: RefObject<HTMLButtonElement | null>;
+  stateRef: RefObject<StudioState>;
+  sharedRef: RefObject<{ rig: Rig; out: BulbOut }>;
+  high: boolean;
 };
 
-/** The pendant lamp: canopy, cord, brass socket, glass bulb and pull chain. */
-export function Pendant({ lampRef, swingRef, cordRef, three, lampState, reduceMotion }: PendantProps) {
+/** Per-frame working state: the simulation, scratch vectors and the light's thermal state. */
+function createLive(rig: Rig) {
+  return {
+    sim: new PendantSim(rig.anchor, rig.cordLength),
+    cordPts: Array.from({ length: CORD_SEGMENTS + 1 }, () => new THREE.Vector3()),
+    v: { s: new THREE.Vector3(), b: new THREE.Vector3(), axis: new THREE.Vector3(), eyelet: new THREE.Vector3(), a: new THREE.Vector3(), c: new THREE.Vector3() },
+    m: new THREE.Matrix4(),
+    ray: new THREE.Raycaster(),
+    plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+    ndc: new THREE.Vector2(),
+    level: 0,
+    heat: 0,
+    fresh: true,
+  };
+}
+
+export function Pendant({ stateRef, sharedRef, high }: PendantProps) {
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
+
+  const bulb = useRef<THREE.Group>(null);
+  const beads = useRef<THREE.InstancedMesh>(null);
+  const knob = useRef<THREE.Mesh>(null);
+  const light = useRef<THREE.PointLight>(null);
+  const glare = useRef<THREE.Sprite>(null);
+  const haze = useRef<THREE.Sprite>(null);
+  const glass = useRef<THREE.MeshPhysicalMaterial>(null);
+  const filament = useRef<THREE.MeshBasicMaterial>(null);
+  const liveRef = useRef<ReturnType<typeof createLive>>(null);
+
+  const res = useMemo(() => {
+    const braid = braidTexture();
+    braid.repeat.set(90, 1);
+    return {
+      cord: new LiveTube(CORD_SEGMENTS + 1, 2, 7, 0.019),
+      socket: socketGeometry(),
+      glass: glassGeometry(high ? 72 : 40),
+      filament: filamentGeometry(),
+      braid,
+      noise: noiseTexture(128, 2),
+      glow: glowTexture(),
+    };
+  }, [high]);
+
+  useEffect(
+    () => () => {
+      res.cord.dispose();
+      res.socket.dispose();
+      res.glass.dispose();
+      res.filament.dispose();
+      res.braid.dispose();
+      res.noise.dispose();
+      res.glow.dispose();
+    },
+    [res],
+  );
+
+  useFrame((_, rawDt) => {
+    const dt = Math.min(rawDt, 1 / 20);
+    const state = stateRef.current;
+    const { rig, out } = sharedRef.current;
+    liveRef.current ??= createLive(rig);
+    const live = liveRef.current;
+    const { sim, v } = live;
+    const now = performance.now();
+
+    /* ---- physics ---- */
+    sim.setCordLength(rig.cordLength);
+    if (state.reduceMotion || live.fresh) {
+      live.fresh = false;
+      sim.hangStraight(rig.anchor, rig.cordLength);
+    } else {
+      sim.frame(v.axis, v.eyelet);
+      live.plane.constant = -rig.anchor.z;
+      if (state.drag) {
+        live.ray.setFromCamera(live.ndc.set(state.drag.x, state.drag.y), camera);
+        const hit = live.ray.ray.intersectPlane(live.plane, v.a);
+        if (hit) {
+          // the chain only gives so much before it pulls the bulb with it
+          const d = v.c.copy(hit).sub(v.eyelet);
+          const max = CHAIN_LENGTH + 0.42;
+          if (d.length() > max) d.setLength(max);
+          sim.pull = (sim.pull ?? new THREE.Vector3()).copy(v.eyelet).add(d);
+        }
+      } else if (now - state.tugAt < 150) {
+        sim.pull = (sim.pull ?? new THREE.Vector3()).copy(v.eyelet).add(v.c.set(0.02, -(CHAIN_LENGTH + 0.24), 0));
+      } else {
+        sim.pull = null;
+      }
+
+      // reaching for the chain calms the pendant, so the knob stays under the hand
+      sim.step(dt, rig.anchor, state.chainHover || !!state.drag);
+    }
+
+    /* ---- pose ---- */
+    sim.get(CORD_SEGMENTS, v.s);
+    sim.get(CORD_SEGMENTS + 1, v.b);
+    v.axis.subVectors(v.b, v.s).normalize();
+    if (bulb.current) {
+      bulb.current.position.copy(v.s);
+      bulb.current.quaternion.setFromUnitVectors(DOWN, v.axis);
+    }
+    for (let i = 0; i <= CORD_SEGMENTS; i++) sim.get(i, live.cordPts[i]);
+    // tuck the end of the cord into the socket grip
+    live.cordPts[CORD_SEGMENTS].addScaledVector(v.axis, 0.03);
+    res.cord.update(live.cordPts);
+
+    const inst = beads.current;
+    if (inst) {
+      const first = KNOB - CHAIN_SEGMENTS;
+      for (let i = first; i < KNOB; i++) {
+        sim.get(i, v.a);
+        live.m.makeTranslation(v.a.x, v.a.y, v.a.z);
+        inst.setMatrixAt(i - first, live.m);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+    }
+    // the knob hangs just below the last bead, along the chain
+    sim.get(KNOB, v.a);
+    sim.get(KNOB - 1, v.c);
+    v.c.sub(v.a).normalize();
+    v.a.addScaledVector(v.c, -0.05);
+    if (knob.current) {
+      knob.current.position.copy(v.a);
+      knob.current.quaternion.setFromUnitVectors(UP, v.c);
+    }
+
+    // the DOM button that is the real (accessible, draggable) chain follows the knob
+    const chainEl = state.els.chain;
+    if (chainEl) {
+      v.c.copy(v.a).project(camera);
+      const x = ((v.c.x + 1) / 2) * size.width;
+      const y = ((1 - v.c.y) / 2) * size.height;
+      chainEl.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+      if (!chainEl.hasAttribute("data-ready")) chainEl.setAttribute("data-ready", "");
+    }
+
+    /* ---- light ---- */
+    out.filament.copy(v.s).addScaledVector(v.axis, FILAMENT_AT);
+    const p = state.pointer;
+    out.filament.project(camera);
+    const aspect = size.width / size.height;
+    const prox = p.active ? Math.exp(-(((p.x - out.filament.x) * aspect) ** 2 + (p.y - out.filament.y) ** 2) / 0.12) : 0;
+    out.filament.copy(v.s).addScaledVector(v.axis, FILAMENT_AT);
+
+    const since = now - state.switchedAt;
+    let level: number;
+    if (state.on) {
+      const base = state.reduceMotion ? 1 : warm(since);
+      const hum = state.reduceMotion ? 1 : 1 + Math.sin(now / 410) * 0.012 + Math.sin(now / 97) * 0.006;
+      level = (base + prox * 0.06) * hum;
+    } else {
+      const target = EMBER + prox * 0.09;
+      level = state.reduceMotion ? target : Math.max(target, live.level - dt / 0.16);
+    }
+    live.level = level;
+    // tungsten cools far slower than the current drops
+    const tau = level > live.heat ? 0.05 : 0.45;
+    live.heat += (level - live.heat) * (state.reduceMotion ? 1 : 1 - Math.exp(-dt / tau));
+    out.level = level;
+    const h = live.heat;
+
+    if (light.current) {
+      light.current.position.copy(out.filament);
+      light.current.intensity = level * 22;
+    }
+    if (filament.current) {
+      filament.current.color.setRGB(1, 0.38 + 0.42 * h, 0.1 + 0.38 * h * h).multiplyScalar(0.06 + 11 * h * h);
+    }
+    if (glass.current) glass.current.emissiveIntensity = h * 0.1;
+    if (glare.current) {
+      glare.current.position.copy(out.filament);
+      glare.current.material.opacity = Math.min(1, h * 0.85);
+      glare.current.scale.setScalar(0.75 + h * 0.35);
+    }
+    if (haze.current) {
+      haze.current.position.copy(out.filament);
+      haze.current.material.opacity = h * 0.32;
+    }
+  });
+
   return (
-    <div className="lamp" ref={lampRef}>
-      {three && <PendantScene stateRef={lampState} swingRef={swingRef} cordRef={cordRef} reduceMotion={reduceMotion} />}
-      {!three && (
-      <svg className="canopy" viewBox="0 0 100 220" aria-hidden="true">
-  {/* canopy on the ceiling, with a contact shadow below it */}
-  <ellipse cx="50" cy="11" rx="15" ry="2.2" fill="#000" opacity="0.35" filter="url(#soft)"/>
-  <path d="M36,10 C36,3 42,0 50,0 C58,0 64,3 64,10 Z" fill="url(#canopyG)"/>
-  <path d="M38,9 C39,5 43,2.5 50,2.5" fill="none" stroke="#5A5A5A" strokeWidth="0.6" opacity="0.7"/>
-  {/* grommet where the cord leaves the canopy */}
-  <rect x="47.2" y="9" width="5.6" height="3.2" rx="1" fill="#0C0C0C"/>
+    <>
+      <pointLight
+        ref={light}
+        color="#ffb36b"
+        intensity={0}
+        decay={2}
+        distance={0}
+        castShadow={high}
+        shadow-mapSize={[512, 512]}
+        shadow-bias={-0.002}
+        shadow-normalBias={0.02}
+        shadow-camera-near={0.04}
+        shadow-camera-far={40}
+      />
 
-    </svg>
-      )}
-      <div className="swing" ref={swingRef}>
-        {!three && (
-        <svg viewBox="0 0 100 220" aria-hidden="true">
-  <defs>
-    <linearGradient id="cordG" x1="48" x2="52" y1="0" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stopColor="#0E0E0E"/><stop offset="0.35" stopColor="#3B3835"/><stop offset="0.55" stopColor="#4A4642"/><stop offset="1" stopColor="#0A0A0A"/>
-    </linearGradient>
-    <linearGradient id="brassG" x1="41" x2="59" y1="0" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stopColor="#4F3A1B"/><stop offset="0.18" stopColor="#8F6B33"/><stop offset="0.36" stopColor="#E2C27A"/><stop offset="0.44" stopColor="#F6E3AB"/><stop offset="0.56" stopColor="#C9A45A"/><stop offset="0.78" stopColor="#7E5C2C"/><stop offset="1" stopColor="#3E2C12"/>
-    </linearGradient>
-    <linearGradient id="brassDark" x1="41" x2="59" y1="0" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stopColor="#2E2010"/><stop offset="0.4" stopColor="#8A6730"/><stop offset="0.5" stopColor="#A8843F"/><stop offset="1" stopColor="#241908"/>
-    </linearGradient>
-    <linearGradient id="canopyG" x1="36" x2="64" y1="0" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stopColor="#141414"/><stop offset="0.4" stopColor="#333"/><stop offset="0.55" stopColor="#3C3C3C"/><stop offset="1" stopColor="#0F0F0F"/>
-    </linearGradient>
-    <radialGradient id="glassBody" cx="0.38" cy="0.32" r="0.75">
-      <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.16"/><stop offset="0.45" stopColor="#FFFFFF" stopOpacity="0.05"/><stop offset="0.85" stopColor="#FFFFFF" stopOpacity="0.02"/><stop offset="1" stopColor="#FFFFFF" stopOpacity="0.09"/>
-    </radialGradient>
-    <radialGradient id="glassWarm" cx="0.5" cy="0.55" r="0.55">
-      <stop offset="0" stopColor="#FFE6B8" stopOpacity="0.75"/><stop offset="0.5" stopColor="#FFD28C" stopOpacity="0.28"/><stop offset="1" stopColor="#FFC96E" stopOpacity="0.04"/>
-    </radialGradient>
-    <linearGradient id="edgeL" x1="0" x2="1" y1="0" y2="0">
-      <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.55"/><stop offset="1" stopColor="#FFFFFF" stopOpacity="0"/>
-    </linearGradient>
-    <linearGradient id="rimR" x1="0" x2="1" y1="0" y2="0">
-      <stop offset="0" stopColor="#000" stopOpacity="0"/><stop offset="1" stopColor="#000" stopOpacity="0.22"/>
-    </linearGradient>
-    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stopColor="#FFD9A0" stopOpacity="0.42"/><stop offset="0.35" stopColor="#FFC978" stopOpacity="0.14"/><stop offset="0.7" stopColor="#FFC070" stopOpacity="0.035"/><stop offset="1" stopColor="#FFC070" stopOpacity="0"/>
-    </radialGradient>
-    <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>
-    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5"/></filter>
-    <clipPath id="bulbClip"><path d="M44,100 L56,100 C56,112 58,118 64,124 C76,134 80,146 80,160 A30,30 0 1 1 20,160 C20,146 24,134 36,124 C42,118 44,112 44,100 Z"/></clipPath>
-  </defs>
+      <mesh geometry={res.cord.geometry} frustumCulled={false} castShadow={high}>
+        <meshStandardMaterial color="#3a3530" roughness={0.93} map={res.braid} bumpMap={res.braid} bumpScale={0.5} />
+      </mesh>
 
-  {/* halo, under everything */}
-  <circle className="halo" cx="50" cy="156" r="78" fill="url(#halo)"/>
+      <group ref={bulb}>
+        {/* bakelite cord grip */}
+        <mesh position={[0, -0.04, 0]} castShadow={high}>
+          <cylinderGeometry args={[0.032, 0.036, 0.08, 24]} />
+          <meshStandardMaterial color="#141210" roughness={0.42} />
+        </mesh>
+        {/* aged brass socket */}
+        <mesh geometry={res.socket} castShadow={high}>
+          <meshStandardMaterial color="#a8854f" metalness={1} roughness={0.34} roughnessMap={res.noise} envMapIntensity={1.15} />
+        </mesh>
+        {/* eyelet the chain hangs from */}
+        <mesh position={[0.1, -0.36, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <torusGeometry args={[0.014, 0.0045, 6, 16]} />
+          <meshStandardMaterial color="#a8854f" metalness={1} roughness={0.35} />
+        </mesh>
 
-  {/* fabric cord: hangs straight, with a hair of a curve */}
-  <path d="M50,12 C50.25,28 49.8,44 50,60" fill="none" stroke="#000" strokeWidth="4" opacity="0.35" transform="translate(0.9,0)" filter="url(#soft)"/>
-  <path d="M50,12 C50.25,28 49.8,44 50,60" fill="none" stroke="url(#cordG)" strokeWidth="3.2" strokeLinecap="butt"/>
-  <path d="M50,12 C50.25,28 49.8,44 50,60" fill="none" stroke="#6A6560" strokeWidth="3.2" strokeDasharray="0.9 1.6" opacity="0.28" transform="translate(-0.4,0)"/>
-  <path d="M50,12 C50.25,28 49.8,44 50,60" fill="none" stroke="#000" strokeWidth="3.2" strokeDasharray="0.9 1.6" strokeDashoffset="1.2" opacity="0.22" transform="translate(0.5,0)"/>
+        {/* glass */}
+        <mesh geometry={res.glass} renderOrder={2}>
+          {high ? (
+            <meshPhysicalMaterial
+              ref={glass}
+              transmission={1}
+              thickness={0.04}
+              roughness={0.06}
+              ior={1.5}
+              attenuationColor="#fff0dc"
+              attenuationDistance={0.8}
+              envMapIntensity={1.3}
+              emissive="#ffae57"
+              emissiveIntensity={0}
+              roughnessMap={res.noise}
+            />
+          ) : (
+            <meshPhysicalMaterial
+              ref={glass}
+              transparent
+              opacity={0.2}
+              roughness={0.05}
+              clearcoat={1}
+              envMapIntensity={1.6}
+              emissive="#ffae57"
+              emissiveIntensity={0}
+              depthWrite={false}
+            />
+          )}
+        </mesh>
 
-  {/* strain relief and socket */}
-  <rect x="46.4" y="59" width="7.2" height="6" rx="1.2" fill="url(#brassDark)"/>
-  <path d="M42,65 L58,65 L58,70 L42,70 Z" fill="url(#brassG)"/>
-  <rect x="41" y="70" width="18" height="26" fill="url(#brassG)"/>
-  {/* grooves: each a dark line with a light line beneath */}
-  <g strokeWidth="0.7">
-    <line x1="41" y1="74" x2="59" y2="74" stroke="#2A1D09" opacity="0.8"/><line x1="41" y1="74.8" x2="59" y2="74.8" stroke="#FFF0C4" opacity="0.35"/>
-    <line x1="41" y1="79" x2="59" y2="79" stroke="#2A1D09" opacity="0.8"/><line x1="41" y1="79.8" x2="59" y2="79.8" stroke="#FFF0C4" opacity="0.35"/>
-    <line x1="41" y1="84" x2="59" y2="84" stroke="#2A1D09" opacity="0.8"/><line x1="41" y1="84.8" x2="59" y2="84.8" stroke="#FFF0C4" opacity="0.35"/>
-    <line x1="41" y1="89" x2="59" y2="89" stroke="#2A1D09" opacity="0.8"/><line x1="41" y1="89.8" x2="59" y2="89.8" stroke="#FFF0C4" opacity="0.35"/>
-  </g>
-  {/* skirt at the bottom of the socket, slightly wider, darker underside */}
-  <path d="M40,96 L60,96 L61,100 L39,100 Z" fill="url(#brassG)"/>
-  <path d="M39,100 L61,100 L60,102 L40,102 Z" fill="#1E1508"/>
-  <circle cx="62.5" cy="97.5" r="1.6" fill="url(#brassDark)"/>
-  <circle cx="62.5" cy="97.5" r="0.6" fill="#1E1508"/>
-  {/* ambient occlusion under the skirt onto the glass neck */}
-  <path d="M42,102 L58,102 L58,110 L42,110 Z" fill="#000" opacity="0.28" filter="url(#soft)"/>
+        {/* glass stem, support rod and filament */}
+        <mesh position={[0, -0.545, 0]}>
+          <cylinderGeometry args={[0.009, 0.014, 0.19, 10]} />
+          <meshStandardMaterial color="#ffffff" transparent opacity={0.22} roughness={0.1} depthWrite={false} />
+        </mesh>
+        <mesh position={[0, -0.77, 0]}>
+          <cylinderGeometry args={[0.0022, 0.0022, 0.24, 5]} />
+          <meshStandardMaterial color="#6a625a" metalness={0.7} roughness={0.4} />
+        </mesh>
+        <mesh geometry={res.filament}>
+          <meshBasicMaterial ref={filament} color="#000" />
+        </mesh>
+      </group>
 
-  {/* contact shadow of the whole bulb against the background, offset to the lower right */}
-  <path d="M44,100 L56,100 C56,112 58,118 64,124 C76,134 80,146 80,160 A30,30 0 1 1 20,160 C20,146 24,134 36,124 C42,118 44,112 44,100 Z" fill="#000" opacity="0.22" transform="translate(3,4)" filter="url(#soft)"/>
+      {/* pull chain */}
+      <instancedMesh ref={beads} args={[undefined, undefined, CHAIN_SEGMENTS]} frustumCulled={false} castShadow={high}>
+        <sphereGeometry args={[0.0135, 10, 8]} />
+        <meshStandardMaterial color="#b18f5a" metalness={1} roughness={0.28} envMapIntensity={1.3} />
+      </instancedMesh>
+      <mesh ref={knob} castShadow={high}>
+        <capsuleGeometry args={[0.024, 0.07, 6, 16]} />
+        <meshStandardMaterial color="#b18f5a" metalness={1} roughness={0.24} roughnessMap={res.noise} envMapIntensity={1.4} />
+      </mesh>
 
-  {/* the glass */}
-  <path className="glassWarm" d="M44,100 L56,100 C56,112 58,118 64,124 C76,134 80,146 80,160 A30,30 0 1 1 20,160 C20,146 24,134 36,124 C42,118 44,112 44,100 Z" fill="url(#glassWarm)"/>
-  <path d="M44,100 L56,100 C56,112 58,118 64,124 C76,134 80,146 80,160 A30,30 0 1 1 20,160 C20,146 24,134 36,124 C42,118 44,112 44,100 Z" fill="url(#glassBody)"/>
-  {/* inner darker rim on the right (refraction) */}
-  <g clipPath="url(#bulbClip)">
-    <path d="M62,122 C76,134 80,146 80,160 A30,30 0 0 1 62,188" fill="none" stroke="url(#rimR)" strokeWidth="7" opacity="0.9"/>
-    <path d="M38,124 C26,134 21,146 21,160" fill="none" stroke="#000" strokeWidth="3" opacity="0.08"/>
-  </g>
-  {/* edge highlight, bright on the left, fading right */}
-  <path d="M44,101 C44,112 42,118 36,124 C24,134 20,146 20,160 A30,30 0 0 0 36,186" fill="none" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
-  <path d="M56,101 C56,112 58,118 64,124 C76,134 80,146 80,160 A30,30 0 0 1 64,186" fill="none" stroke="#FFFFFF" strokeWidth="0.7" opacity="0.18"/>
-  {/* studio window reflection, upper left, and a faint secondary one lower right */}
-  <path d="M33,134 C31,142 30,150 31,158" fill="none" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" opacity="0.32"/>
-  <path d="M38,127 C37,129 36,131 35.5,133" fill="none" stroke="#FFFFFF" strokeWidth="1.6" strokeLinecap="round" opacity="0.28"/>
-  <path d="M66,172 C64,176 61,179 58,181" fill="none" stroke="#FFFFFF" strokeWidth="1.4" strokeLinecap="round" opacity="0.1"/>
-
-  {/* glass stem and filament supports */}
-  <path d="M50,102 L50,132" stroke="#FFFFFF" strokeWidth="2.2" opacity="0.14"/>
-  <path d="M50,102 L50,132" stroke="#000" strokeWidth="0.5" opacity="0.18"/>
-  <path d="M47.5,131 L40,151.5 M52.5,131 L60,151.5" fill="none" stroke="#5A5248" strokeWidth="0.7" strokeLinecap="round"/>
-  {/* filament: glow copy beneath, then the fine coil */}
-  <path className="filGlow" d="M40.0,151.3 L40.3,152.9 L40.6,151.8 L40.9,153.4 L41.2,152.3 L41.6,153.9 L41.9,152.8 L42.2,154.3 L42.5,153.3 L42.8,154.8 L43.1,153.7 L43.4,155.2 L43.8,154.1 L44.1,155.6 L44.4,154.5 L44.7,156.0 L45.0,154.9 L45.3,156.4 L45.6,155.2 L45.9,156.7 L46.2,155.5 L46.6,156.9 L46.9,155.8 L47.2,157.2 L47.5,156.0 L47.8,157.4 L48.1,156.1 L48.4,157.5 L48.8,156.3 L49.1,157.6 L49.4,156.3 L49.7,157.6 L50.0,156.3 L50.3,157.6 L50.6,156.3 L50.9,157.6 L51.2,156.3 L51.6,157.5 L51.9,156.1 L52.2,157.4 L52.5,156.0 L52.8,157.2 L53.1,155.8 L53.4,156.9 L53.8,155.5 L54.1,156.7 L54.4,155.2 L54.7,156.4 L55.0,154.9 L55.3,156.0 L55.6,154.5 L55.9,155.6 L56.2,154.1 L56.6,155.2 L56.9,153.7 L57.2,154.8 L57.5,153.3 L57.8,154.3 L58.1,152.8 L58.4,153.9 L58.8,152.3 L59.1,153.4 L59.4,151.8 L59.7,152.9 L60.0,151.3" fill="none" stroke="#FFB85A" strokeWidth="1.8" strokeLinejoin="round" filter="url(#bloom)"/>
-  <path className="fil" d="M40.0,151.3 L40.3,152.9 L40.6,151.8 L40.9,153.4 L41.2,152.3 L41.6,153.9 L41.9,152.8 L42.2,154.3 L42.5,153.3 L42.8,154.8 L43.1,153.7 L43.4,155.2 L43.8,154.1 L44.1,155.6 L44.4,154.5 L44.7,156.0 L45.0,154.9 L45.3,156.4 L45.6,155.2 L45.9,156.7 L46.2,155.5 L46.6,156.9 L46.9,155.8 L47.2,157.2 L47.5,156.0 L47.8,157.4 L48.1,156.1 L48.4,157.5 L48.8,156.3 L49.1,157.6 L49.4,156.3 L49.7,157.6 L50.0,156.3 L50.3,157.6 L50.6,156.3 L50.9,157.6 L51.2,156.3 L51.6,157.5 L51.9,156.1 L52.2,157.4 L52.5,156.0 L52.8,157.2 L53.1,155.8 L53.4,156.9 L53.8,155.5 L54.1,156.7 L54.4,155.2 L54.7,156.4 L55.0,154.9 L55.3,156.0 L55.6,154.5 L55.9,155.6 L56.2,154.1 L56.6,155.2 L56.9,153.7 L57.2,154.8 L57.5,153.3 L57.8,154.3 L58.1,152.8 L58.4,153.9 L58.8,152.3 L59.1,153.4 L59.4,151.8 L59.7,152.9 L60.0,151.3" fill="none" strokeWidth="0.7" strokeLinejoin="round" strokeLinecap="round"/>
-      </svg>
-        )}
-        <button
-          className="cord"
-          ref={cordRef}
-          type="button"
-          aria-pressed="false"
-          aria-label="Pull the chain to turn the lights on"
-        >
-          <span className="rope" aria-hidden="true" />
-          <span className="knob" aria-hidden="true" />
-          <span className="hint" aria-hidden="true">pull</span>
-        </button>
-      </div>
-    </div>
+      {/* glare and haze around the filament: cheaper and more controllable than a bloom pass */}
+      <sprite ref={haze} scale={[6.5, 6.5, 1]} renderOrder={3}>
+        <spriteMaterial map={res.glow} color="#ff9f4a" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+      <sprite ref={glare} renderOrder={4}>
+        <spriteMaterial map={res.glow} color="#ffd29a" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+    </>
   );
 }

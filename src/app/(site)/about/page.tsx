@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeading } from "@/components/layout/page-heading";
 import { Badge } from "@/components/ui/badge";
-import { socials } from "@/config/site";
+import { site, socials } from "@/config/site";
 
 export const metadata: Metadata = { title: "About" };
 
@@ -21,7 +21,7 @@ export default function AboutPage() {
 
       <blockquote className="mb-14 max-w-3xl border-l-2 border-accent pl-6" data-reveal>
         <p className="page-wordmark text-[clamp(26px,4.5vw,52px)]">
-          The difference between good and great is only 2&deg;.
+          {site.quote}
         </p>
       </blockquote>
 

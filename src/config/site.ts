@@ -14,6 +14,11 @@ export const site = {
   domain: "heresharshad.com",
   url: "https://heresharshad.com",
   email: "hello.heresharshad@gmail.com",
+  role: "Product Engineer at Classavo",
+  location: "Mumbai, India",
+  /** Shown as a drafting annotation. */
+  coordinates: "19.0760° N  72.8777° E",
+  quote: "The difference between good and great is only 2°.",
   description:
     "Harshad's portfolio, projects and experiments are being built at heresharshad.com.",
 } as const;

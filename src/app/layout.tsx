@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo } from "next/font/google";
+import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import { site } from "@/config/site";
 import "./globals.css";
 
@@ -10,12 +10,20 @@ const archivo = Archivo({
   display: "swap",
 });
 
+/** Technical annotations: coordinates, dimensions, indices. */
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
-  title: { default: `${site.brand} | Coming soon`, template: `%s | ${site.brand}` },
+  title: { default: `${site.brand} | Portfolio 2026`, template: `%s | ${site.brand}` },
   description: site.description,
   openGraph: {
-    title: `${site.brand} | Coming soon`,
+    title: `${site.brand} | Portfolio 2026`,
     description: "The site is still in the dark. Bring your own light.",
     url: site.url,
   },
@@ -33,7 +41,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={archivo.variable}>
+    <html lang="en" className={`${archivo.variable} ${plexMono.variable}`}>
       <body>{children}</body>
     </html>
   );
