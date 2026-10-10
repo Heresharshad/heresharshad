@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-/* Small procedural textures, drawn once on a canvas. No image downloads. */
+/* Small procedural textures, computed or drawn once on a canvas. No image downloads. */
 
 function canvas(w: number, h: number) {
   const c = document.createElement("canvas");
@@ -9,69 +9,87 @@ function canvas(w: number, h: number) {
   return [c, c.getContext("2d")!] as const;
 }
 
+/*
+ * The noise, the braid and the glow are computed into pixel arrays rather than
+ * drawn on a canvas: Safari's fingerprinting protection adds random colour
+ * noise to canvas pixels a page reads back (a texture upload is a read), which
+ * showed on iPhones as red and green specks in the bulb's glow.
+ */
+
+/** Pixels from a function of (x, y), in canvas orientation: row 0 is the top, as a CanvasTexture would show it. */
+function pixelTexture(w: number, h: number, pixel: (x: number, y: number, out: Uint8Array, i: number) => void) {
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) pixel(x, y, data, ((h - 1 - y) * w + x) * 4);
+  const tex = new THREE.DataTexture(data, w, h);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
 /** Soft grey noise, for roughness variation (fingerprints, uneven polish, concrete). */
 export function noiseTexture(size = 128, repeat = 1) {
-  const [c, g] = canvas(size, size);
-  const img = g.createImageData(size, size);
-  for (let i = 0; i < size * size; i++) {
-    const v = 150 + Math.random() * 70;
-    img.data.set([v, v, v, 255], i * 4);
-  }
-  g.putImageData(img, 0, 0);
-  // a few broad smudges on top
-  for (let i = 0; i < 18; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const r = size * (0.08 + Math.random() * 0.2);
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    const tone = Math.random() < 0.5 ? "0,0,0" : "255,255,255";
-    grad.addColorStop(0, `rgba(${tone},0.12)`);
-    grad.addColorStop(1, `rgba(${tone},0)`);
-    g.fillStyle = grad;
-    g.fillRect(0, 0, size, size);
-  }
-  const tex = new THREE.CanvasTexture(c);
+  // a few broad smudges over fine grain
+  const smudges = Array.from({ length: 18 }, () => ({
+    x: Math.random() * size,
+    y: Math.random() * size,
+    r: size * (0.08 + Math.random() * 0.2),
+    tone: Math.random() < 0.5 ? 0 : 255,
+  }));
+  const tex = pixelTexture(size, size, (x, y, out, i) => {
+    let v = 150 + Math.random() * 70;
+    for (const s of smudges) {
+      const a = 0.12 * clamp01(1 - Math.hypot(x + 0.5 - s.x, y + 0.5 - s.y) / s.r);
+      v = v * (1 - a) + s.tone * a;
+    }
+    out[i] = out[i + 1] = out[i + 2] = v;
+    out[i + 3] = 255;
+  });
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeat, repeat);
   return tex;
 }
 
-/** Diagonal weave for the braided fabric cord (u runs along the cord). */
+/** Diagonal weave for the braided fabric cord (u runs along the cord): light strands every 8 px, a dark seam between. */
 export function braidTexture() {
-  const [c, g] = canvas(64, 32);
-  g.fillStyle = "#777";
-  g.fillRect(0, 0, 64, 32);
-  for (let x = -32; x < 96; x += 8) {
-    g.strokeStyle = "#cfcfcf";
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(x, 0);
-    g.lineTo(x + 16, 32);
-    g.stroke();
-    g.strokeStyle = "#3a3a3a";
-    g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(x + 4, 0);
-    g.lineTo(x + 20, 32);
-    g.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
+  // perpendicular distance per horizontal pixel for the strands' slope (16 across, 32 down)
+  const across = 32 / Math.hypot(16, 32);
+  const strand = (s: number, width: number) => {
+    const m = ((s % 8) + 8) % 8;
+    return clamp01(width / 2 + 0.5 - Math.min(m, 8 - m) * across);
+  };
+  const tex = pixelTexture(64, 32, (x, y, out, i) => {
+    const s = x + 0.5 - (y + 0.5) / 2;
+    let v = 0x77;
+    const light = strand(s, 3);
+    v = v * (1 - light) + 0xcf * light;
+    const dark = strand(s - 4, 1);
+    v = v * (1 - dark) + 0x3a * dark;
+    out[i] = out[i + 1] = out[i + 2] = v;
+    out[i + 3] = 255;
+  });
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
 
 /** Radial falloff used for the bulb's glare and haze sprites. */
 export function glowTexture() {
-  const [c, g] = canvas(128, 128);
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, "rgba(255,255,255,1)");
-  grad.addColorStop(0.12, "rgba(255,255,255,0.55)");
-  grad.addColorStop(0.35, "rgba(255,255,255,0.14)");
-  grad.addColorStop(0.7, "rgba(255,255,255,0.03)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(c);
+  const stops: [number, number][] = [[0, 1], [0.12, 0.55], [0.35, 0.14], [0.7, 0.03], [1, 0]];
+  const alpha = (r: number) => {
+    for (let k = 1; k < stops.length; k++) {
+      const [r1, a1] = stops[k];
+      const [r0, a0] = stops[k - 1];
+      if (r <= r1) return a0 + ((a1 - a0) * (r - r0)) / (r1 - r0);
+    }
+    return 0;
+  };
+  const tex = pixelTexture(128, 128, (x, y, out, i) => {
+    out[i] = out[i + 1] = out[i + 2] = 255;
+    out[i + 3] = Math.round(255 * alpha(Math.hypot(x + 0.5 - 64, y + 0.5 - 64) / 64));
+  });
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }

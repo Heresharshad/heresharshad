@@ -7,7 +7,8 @@ import type { ComponentType } from "react";
  */
 
 export type EnvironmentId = "studio" | "experiments" | "about" | "work" | "contact";
-export type Tier = "none" | "low" | "high";
+/** none: no WebGL. low: a weak device. mid: a capable phone or tablet (full materials, no shadows or reflections). high: a desktop. */
+export type Tier = "none" | "low" | "mid" | "high";
 export type V3 = [number, number, number];
 
 export type CameraPose = { pos: V3; look: V3; fov: number };
@@ -16,7 +17,10 @@ export type Viewport = { aspect: number; narrow: boolean };
 /** Props every room scene receives from the world canvas. */
 export type EnvironmentProps = {
   id: EnvironmentId;
+  /** Full materials and geometry (the transmissive bulb glass, finer meshes): mid and high tiers. */
   high: boolean;
+  /** Reflective floors, which draw the scene a second time: high tier only. */
+  reflections: boolean;
   /** Call once the scene has mounted and compiled; the controller waits for it before a transition starts. */
   onReady: () => void;
 };
