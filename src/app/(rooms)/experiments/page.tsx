@@ -6,7 +6,7 @@ import { RoomPage } from "@/components/world/room-page";
 
 export const metadata: Metadata = { title: "Experiments" };
 
-/** The lab: an atmospheric void behind the studio wall (haze, glows, a floor grid, drifting motes). The scene is src/components/world/environments/experiments. */
+/** The lab: a concrete room behind the studio wall, lit by a fluorescent batten. The scene is src/components/world/environments/experiments. */
 export default function ExperimentsPage() {
   return (
     <RoomPage id="experiments" className="flex-1 px-(--pad-x) pt-16">
