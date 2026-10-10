@@ -35,13 +35,19 @@ export const ROOM = {
 
 /** The fluorescent batten on the far wall: left of centre, on standoffs, the glass this far off the wall. */
 export const TUBE = { x: -2.7, y: 1.45, z: ROOM.z[1] + 0.16, length: 3.6 };
+/**
+ * The workbench along the far wall, under the batten and left of its conduit:
+ * x extent, height to the worktop's surface, depth off the wall. The pegboard
+ * hangs above it, between these heights off the floor.
+ */
+export const WORKBENCH = { x0: -5.0, x1: -1.2, top: 0.92, depth: 0.8, peg: [1.2, 2.5] as const };
 /** The far wall steps back to the right of this line, behind a full-height reveal. */
 export const STEP = { x: 0.45, depth: 0.55 };
 
 export function restPose({ narrow }: Viewport): CameraPose {
   // low and looking slightly down: the floor, the warm strip and the lit far wall all in frame
   return narrow
-    ? { pos: [-2.3, -0.8, -5.4], look: [-2.1, -1.4, -17], fov: 50 }
+    ? { pos: [-2.8, -0.8, -5.4], look: [-3.0, -2.0, -17], fov: 50 }
     : { pos: [-2.0, -0.9, -6.2], look: [-1.3, -1.5, -17], fov: 42 };
 }
 

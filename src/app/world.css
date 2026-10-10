@@ -40,13 +40,14 @@ html[data-world-transition] .room-shell:not(.is-revealed) .room-content { opacit
   position: fixed; inset: 0; z-index: 1; pointer-events: none;
   background: radial-gradient(130% 95% at 50% 40%, transparent 52%, rgba(0, 0, 0, 0.6) 100%);
 }
-/* no WebGL: the room as a still, a dark concrete wall under a cold strip of light */
+/* no WebGL: the room as a still, a blue-lit painted wall over the dark, the bench lamp's warm pool low down */
 .room-fallback {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(60% 30% at 42% 30%, rgba(214, 228, 240, 0.14), transparent 70%),
-    linear-gradient(180deg, #0a0a0a, #0e0d0c 60%, #080808),
-    #070707;
+    radial-gradient(50% 32% at 40% 22%, rgba(63, 134, 255, 0.28), transparent 70%),
+    radial-gradient(14% 10% at 34% 72%, rgba(255, 179, 107, 0.12), transparent 70%),
+    linear-gradient(180deg, #08101e, #0b1426 60%, #05070c),
+    #06080d;
 }
 html[data-world] .room-fallback { display: none; }
 
@@ -62,8 +63,8 @@ html[data-world] .room-fallback { display: none; }
   -webkit-background-clip: text; background-clip: text;
 }
 html:not([data-world]) .room-title { --li: 1; --lx: 35%; --ly: -60%; }
-.room-lede { color: #a9a39b; }
-.room-eyebrow { color: #8d867c; }
+.room-lede { color: #b6bdc7; }
+.room-eyebrow { color: #98a1ac; }
 /* content on dark glass: the room shows through, the type stays readable */
 .room-card {
   background: rgba(7, 7, 7, 0.72); border: 1px solid rgba(255, 255, 255, 0.07);

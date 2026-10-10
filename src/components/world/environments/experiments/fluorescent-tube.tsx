@@ -15,14 +15,14 @@ import { ROOM, TUBE } from "./config";
  * The room decides the level; this only shows it.
  */
 
-/** Daylight phosphor, not blue. The halo a touch warmer, as the wall takes it. */
-const TUBE_COLOR = "#dbe7f0";
-const HALO_COLOR = "#cfdbe3";
+/** A blue tube: the glass a pale ice blue where it is brightest, the light it throws a deeper cobalt. */
+const TUBE_COLOR = "#7fb6ff";
+const HALO_COLOR = "#3f86ff";
 
 /** Full-level intensities. */
-const RECT_INTENSITY = 200;
+const RECT_INTENSITY = 150;
 /** Two small sources along the tube, close to the wall: the pool the lamp itself throws around the fitting. */
-const POINT_INTENSITY = 22;
+const POINT_INTENSITY = 16;
 const GLASS_EMISSIVE = 6;
 const HALO_OPACITY = 0.16;
 const CORE_OPACITY = 0.4;
