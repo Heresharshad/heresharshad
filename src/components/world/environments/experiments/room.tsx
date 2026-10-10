@@ -12,18 +12,20 @@ import { world } from "@/components/world/store";
 import type { EnvironmentProps } from "@/components/world/types";
 import { DOOR, FLOOR_Y, ROOM, STEP, TUBE, WALL_Z } from "./config";
 import { FluorescentTube, tubeHum, tubeLevel, type TubeHandle } from "./fluorescent-tube";
+import { Workbench, type WorkbenchHandle } from "./workbench";
 
 /*
- * The Experiments room: the same building, another room. The walls are the
- * studio's cladding system (studio-tiles.ts) in cast concrete rather than
- * stone, so the courses carry on through the wall and the ambient is held
+ * The Experiments room: the same building, another room, now a workshop. The
+ * walls are the studio's cladding system (studio-tiles.ts), painted a cool
+ * blue-grey, so the courses carry on through the wall and the ambient is held
  * back the same way: nothing reads until a light finds it. The envelope is
  * designed, not boxed: the walls float on a shadow gap over a dark plinth,
- * the far wall steps back behind a full-height reveal to the right, a cast
- * bench runs along it, and a fluorescent batten on standoffs is the one real
- * light. You arrive in the dark. The tube sputters twice, showing the wall
- * and losing it, then holds, and the room is what its light reaches; a warm
- * line at the base of the left wall comes up last, dim, to give the depth.
+ * the far wall steps back behind a full-height reveal to the right, a garage
+ * workbench runs along it under a blue fluorescent batten on standoffs. You
+ * arrive in the dark. The tube sputters twice, showing the wall and losing it,
+ * then holds, and the room is what its blue reaches; the laptop on the bench
+ * wakes with it, a cyan line at the base of the left wall comes up last to
+ * give the depth, and the clamp lamp's warm pool is the one warm thing.
  */
 
 RectAreaLightUniformsLib.init();
@@ -44,20 +46,20 @@ const STRIP_LEN = STRIP.z0 - STRIP.z1;
 const STRIP_Z = (STRIP.z0 + STRIP.z1) / 2;
 /** The floor runs from the studio's floor edge (under the jambs) to the far wall. */
 const FLOOR = { x0: SLOT.back, x1: X1, z0: WALL_Z, z1: ZB - STEP.depth };
-/** The bench along the far wall, left of the reveal. */
-const BENCH = { x0: -5.3, x1: -0.35, h: 0.46, d: 0.78 };
-
-const WARM = "#ffb36b";
-/** Full-level intensities for the warm strip: a line that gives depth, not a second room light. */
-const WARM_RECT = 16;
-const WARM_POINT = 2.2;
-const WARM_BAR = 2.6;
+/** The line in the floor slot: a cooler, greener blue than the batten, so the two blues layer. */
+const STRIP_COLOR = "#3fc4ff";
+/** Full-level intensities for the strip: a line that gives depth, not a second room light. */
+const STRIP_RECT = 16;
+const STRIP_POINT = 2.2;
+const STRIP_BAR = 2.6;
+/** The walls: painted block, a cool blue-grey, so the batten's blue reads on them. */
+const WALL_PAINT = "#4f5a66";
 /** The room's own lights ramp when it is entered directly (seconds). */
 const RAMP = 2.4;
 
 const TUBE_CENTRE = new THREE.Vector3(TUBE.x, TUBE.y, TUBE.z);
 /** The bounce the floor takes from the lit far wall: the tube's cold white. */
-const BOUNCE: [number, number, number] = [0.5, 0.6, 0.7];
+const BOUNCE: [number, number, number] = [0.3, 0.5, 0.9];
 
 type Box = { x: [number, number]; y: [number, number]; z: [number, number] };
 const box = (x: Box["x"], y: Box["y"], z: Box["z"]): Box => ({ x, y, z });
@@ -81,8 +83,6 @@ const SHELL: Box[] = [
   box([SLOT.back - T, OPEN.x0], [Y0 + GAP, Y1], [ZF - FRONT_T, ZF]),
   box([OPEN.x1, X1 + T], [Y0 + GAP, Y1], [ZF - FRONT_T, ZF]),
   box([OPEN.x0, OPEN.x1], [OPEN.top, Y1], [ZF - FRONT_T, ZF]),
-  // the bench: one cast block
-  box([BENCH.x0, BENCH.x1], [Y0, Y0 + BENCH.h], [ZB, ZB + BENCH.d]),
 ];
 
 /** The dark plinth the walls float on, set back into shadow. */
@@ -129,6 +129,7 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
 
   const group = useRef<THREE.Group>(null);
   const tube = useRef<TubeHandle>(null);
+  const bench = useRef<WorkbenchHandle>(null);
   const warmBar = useRef<THREE.MeshStandardMaterial>(null);
   const warmRect = useRef<THREE.RectAreaLight>(null);
   const warmPoint = useRef<THREE.PointLight>(null);
@@ -146,8 +147,8 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
     return {
       shell: boxesGeometry(SHELL),
       plinth: boxesGeometry(PLINTH),
-      // cast concrete: the studio's cladding, a shade cooler and more matte than the stone
-      concrete: tileMaterial("wall", origin, { color: "#3b3834", roughness: 0.86 }),
+      // the studio's cladding, painted: a cool blue-grey, matte
+      concrete: tileMaterial("wall", origin, { color: WALL_PAINT, roughness: 0.82 }),
       floorTiles: tileMaterial("floor", origin, { bounce: BOUNCE }),
       floorNoise: noiseTexture(256, 6),
       dark: new THREE.MeshStandardMaterial({ color: "#0a0a0a", roughness: 0.92, metalness: 0, envMapIntensity: 0 }),
@@ -235,11 +236,13 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
       fu.uBulbLevel.value = level * 0.6;
     }
 
-    /* ---- the warm line comes up last, slowly, once the tube is steady ---- */
+    /* ---- the floor line and the bench lamp come up last, slowly, once the tube is steady ---- */
     const warm = smoothstep(0.74, 1, lights) * dim;
-    if (warmBar.current) warmBar.current.emissiveIntensity = warm * WARM_BAR;
-    if (warmRect.current) warmRect.current.intensity = warm * WARM_RECT;
-    if (warmPoint.current) warmPoint.current.intensity = warm * WARM_POINT;
+    if (warmBar.current) warmBar.current.emissiveIntensity = warm * STRIP_BAR;
+    if (warmRect.current) warmRect.current.intensity = warm * STRIP_RECT;
+    if (warmPoint.current) warmPoint.current.intensity = warm * STRIP_POINT;
+    // the laptop wakes with the tube; the clamp lamp is the last thing on
+    bench.current?.apply(smoothstep(0.82, 1, lights) * dim, Math.min(1, base * 1.2));
 
     /* ---- the page's heading takes its light from the tube ---- */
     if (live.frame++ % 60 === 0 || (live.el && !live.el.isConnected)) {
@@ -316,15 +319,16 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
         <planeGeometry args={[FLOOR.x1 - FLOOR.x0, FLOOR.z0 - FLOOR.z1]} />
       </mesh>
 
-      {/* the warm line: a diffused bar at the back of the slot */}
+      {/* the floor line: a diffused bar at the back of the slot */}
       <mesh position={[SLOT.back + 0.0125, Y0 + 0.1, STRIP_Z]}>
         <boxGeometry args={[0.025, 0.05, STRIP_LEN]} />
-        <meshStandardMaterial ref={warmBar} color="#1c1612" roughness={0.6} emissive={WARM} emissiveIntensity={0} envMapIntensity={0} />
+        <meshStandardMaterial ref={warmBar} color="#1c1612" roughness={0.6} emissive={STRIP_COLOR} emissiveIntensity={0} envMapIntensity={0} />
       </mesh>
       {/* its light: a long rect facing up that washes the lower wall in a band, and a point near the far end that pools on the floor */}
-      <rectAreaLight ref={warmRect} position={[X0 + 0.17, Y0 + 0.03, STRIP_Z]} rotation-x={Math.PI / 2} width={0.26} height={STRIP_LEN} color={WARM} intensity={0} />
-      <pointLight ref={warmPoint} position={[X0 + 0.45, Y0 + 0.5, ZB + 1.6]} color={WARM} intensity={0} decay={2} distance={7} />
+      <rectAreaLight ref={warmRect} position={[X0 + 0.17, Y0 + 0.03, STRIP_Z]} rotation-x={Math.PI / 2} width={0.26} height={STRIP_LEN} color={STRIP_COLOR} intensity={0} />
+      <pointLight ref={warmPoint} position={[X0 + 0.45, Y0 + 0.5, ZB + 1.6]} color={STRIP_COLOR} intensity={0} decay={2} distance={7} />
 
+      <Workbench ref={bench} high={high} />
       <FluorescentTube ref={tube} high={high} />
     </group>
   );
