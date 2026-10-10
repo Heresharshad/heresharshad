@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Experiments" };
 /** The lab: a concrete room behind the studio wall, lit by a fluorescent batten. The scene is src/components/world/environments/experiments. */
 export default function ExperimentsPage() {
   return (
-    <RoomPage id="experiments" className="flex-1 px-(--pad-x) pt-10">
+    <RoomPage id="experiments" className="flex-1 px-(--pad-x) pt-16 lg:pt-10">
       <div className="mb-10" data-reveal>
         <p className="room-eyebrow mb-4 text-xs uppercase tracking-[0.14em]">02 / Experiments</p>
         <h1 className="room-title page-wordmark room-wordmark uppercase" data-room-light>
