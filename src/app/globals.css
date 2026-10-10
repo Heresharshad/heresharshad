@@ -134,3 +134,8 @@ html.lights-on {
   background: repeating-linear-gradient(-45deg, var(--accent) 0 14px, var(--ground) 14px 28px);
   opacity: 0.85;
 }
+
+/* Lenis smooth-scroll recommended base styles */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }

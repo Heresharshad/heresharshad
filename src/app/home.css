@@ -244,3 +244,9 @@ html.lights-on .glow, html.lights-on .core { opacity: 0; }
   .contact a, .contact a .arrow { transition: none; }
 }
   
+/* ---- 3D pendant ---- */
+.lamp-canvas { position: absolute !important; left: -100px; top: -20px; width: 300px !important; height: 320px !important; pointer-events: none; }
+.lamp-canvas canvas { display: block; }
+/* the DOM chain stays as the accessible, draggable hit target; the 3D chain is drawn beneath it */
+.lamp:has(.lamp-canvas) .cord .rope, .lamp:has(.lamp-canvas) .cord .knob { background: none; box-shadow: none; }
+.lamp:has(.lamp-canvas) .cord:focus-visible .knob { box-shadow: 0 0 0 3px var(--ground), 0 0 0 5px var(--accent); }

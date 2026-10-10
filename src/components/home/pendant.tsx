@@ -1,17 +1,27 @@
 "use client";
 
-import type { Ref } from "react";
+import dynamic from "next/dynamic";
+import type { Ref, RefObject } from "react";
+import type { LampState } from "./lamp-state";
+
+const PendantScene = dynamic(() => import("./pendant-scene"), { ssr: false });
 
 type PendantProps = {
+  /** Render the WebGL pendant instead of the SVG fallback. */
+  three: boolean;
+  lampState: RefObject<LampState>;
+  reduceMotion: boolean;
   lampRef: Ref<HTMLDivElement>;
-  swingRef: Ref<HTMLDivElement>;
-  cordRef: Ref<HTMLButtonElement>;
+  swingRef: RefObject<HTMLDivElement | null>;
+  cordRef: RefObject<HTMLButtonElement | null>;
 };
 
 /** The pendant lamp: canopy, cord, brass socket, glass bulb and pull chain. */
-export function Pendant({ lampRef, swingRef, cordRef }: PendantProps) {
+export function Pendant({ lampRef, swingRef, cordRef, three, lampState, reduceMotion }: PendantProps) {
   return (
     <div className="lamp" ref={lampRef}>
+      {three && <PendantScene stateRef={lampState} swingRef={swingRef} cordRef={cordRef} reduceMotion={reduceMotion} />}
+      {!three && (
       <svg className="canopy" viewBox="0 0 100 220" aria-hidden="true">
   {/* canopy on the ceiling, with a contact shadow below it */}
   <ellipse cx="50" cy="11" rx="15" ry="2.2" fill="#000" opacity="0.35" filter="url(#soft)"/>
@@ -21,7 +31,9 @@ export function Pendant({ lampRef, swingRef, cordRef }: PendantProps) {
   <rect x="47.2" y="9" width="5.6" height="3.2" rx="1" fill="#0C0C0C"/>
 
     </svg>
+      )}
       <div className="swing" ref={swingRef}>
+        {!three && (
         <svg viewBox="0 0 100 220" aria-hidden="true">
   <defs>
     <linearGradient id="cordG" x1="48" x2="52" y1="0" y2="0" gradientUnits="userSpaceOnUse">
@@ -111,6 +123,7 @@ export function Pendant({ lampRef, swingRef, cordRef }: PendantProps) {
   <path className="filGlow" d="M40.0,151.3 L40.3,152.9 L40.6,151.8 L40.9,153.4 L41.2,152.3 L41.6,153.9 L41.9,152.8 L42.2,154.3 L42.5,153.3 L42.8,154.8 L43.1,153.7 L43.4,155.2 L43.8,154.1 L44.1,155.6 L44.4,154.5 L44.7,156.0 L45.0,154.9 L45.3,156.4 L45.6,155.2 L45.9,156.7 L46.2,155.5 L46.6,156.9 L46.9,155.8 L47.2,157.2 L47.5,156.0 L47.8,157.4 L48.1,156.1 L48.4,157.5 L48.8,156.3 L49.1,157.6 L49.4,156.3 L49.7,157.6 L50.0,156.3 L50.3,157.6 L50.6,156.3 L50.9,157.6 L51.2,156.3 L51.6,157.5 L51.9,156.1 L52.2,157.4 L52.5,156.0 L52.8,157.2 L53.1,155.8 L53.4,156.9 L53.8,155.5 L54.1,156.7 L54.4,155.2 L54.7,156.4 L55.0,154.9 L55.3,156.0 L55.6,154.5 L55.9,155.6 L56.2,154.1 L56.6,155.2 L56.9,153.7 L57.2,154.8 L57.5,153.3 L57.8,154.3 L58.1,152.8 L58.4,153.9 L58.8,152.3 L59.1,153.4 L59.4,151.8 L59.7,152.9 L60.0,151.3" fill="none" stroke="#FFB85A" strokeWidth="1.8" strokeLinejoin="round" filter="url(#bloom)"/>
   <path className="fil" d="M40.0,151.3 L40.3,152.9 L40.6,151.8 L40.9,153.4 L41.2,152.3 L41.6,153.9 L41.9,152.8 L42.2,154.3 L42.5,153.3 L42.8,154.8 L43.1,153.7 L43.4,155.2 L43.8,154.1 L44.1,155.6 L44.4,154.5 L44.7,156.0 L45.0,154.9 L45.3,156.4 L45.6,155.2 L45.9,156.7 L46.2,155.5 L46.6,156.9 L46.9,155.8 L47.2,157.2 L47.5,156.0 L47.8,157.4 L48.1,156.1 L48.4,157.5 L48.8,156.3 L49.1,157.6 L49.4,156.3 L49.7,157.6 L50.0,156.3 L50.3,157.6 L50.6,156.3 L50.9,157.6 L51.2,156.3 L51.6,157.5 L51.9,156.1 L52.2,157.4 L52.5,156.0 L52.8,157.2 L53.1,155.8 L53.4,156.9 L53.8,155.5 L54.1,156.7 L54.4,155.2 L54.7,156.4 L55.0,154.9 L55.3,156.0 L55.6,154.5 L55.9,155.6 L56.2,154.1 L56.6,155.2 L56.9,153.7 L57.2,154.8 L57.5,153.3 L57.8,154.3 L58.1,152.8 L58.4,153.9 L58.8,152.3 L59.1,153.4 L59.4,151.8 L59.7,152.9 L60.0,151.3" fill="none" strokeWidth="0.7" strokeLinejoin="round" strokeLinecap="round"/>
       </svg>
+        )}
         <button
           className="cord"
           ref={cordRef}

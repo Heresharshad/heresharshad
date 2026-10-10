@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Composition } from "./composition";
+import { createLampState } from "./lamp-state";
 import { Pendant } from "./pendant";
 
 type Pt = { x: number; y: number };
@@ -26,6 +27,17 @@ function css(el: HTMLElement, rules: Record<string, string>) {
   for (const [prop, value] of Object.entries(rules)) el.style.setProperty(prop, value);
 }
 
+function hasWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+const noopSubscribe = () => () => {};
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+
 /**
  * The homepage: a dark room lit by a cursor "light" and a pull-chain pendant.
  * Ported from the original vanilla-JS page; the imperative effect below is the
@@ -36,6 +48,17 @@ export function HomeScene() {
   const lampRef = useRef<HTMLDivElement>(null);
   const swingRef = useRef<HTMLDivElement>(null);
   const cordRef = useRef<HTMLButtonElement>(null);
+  const lampState = useRef(createLampState());
+  const three = useSyncExternalStore(noopSubscribe, hasWebGL, () => false);
+  const reduceMotionPref = useSyncExternalStore(
+    (notify) => {
+      const mql = window.matchMedia(reducedMotionQuery);
+      mql.addEventListener("change", notify);
+      return () => mql.removeEventListener("change", notify);
+    },
+    () => window.matchMedia(reducedMotionQuery).matches,
+    () => false,
+  );
 
   useEffect(() => {
     const home = rootRef.current;
@@ -44,6 +67,7 @@ export function HomeScene() {
     const cord = cordRef.current;
     if (!home || !lamp || !swing || !cord) return;
 
+    const ls = lampState.current;
     const $ = <T extends HTMLElement>(id: string) => home.querySelector<T>(`#${id}`)!;
     const root = document.documentElement;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -243,6 +267,12 @@ export function HomeScene() {
     const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     const originalTheme = themeMeta?.getAttribute("content") ?? null;
     function startSwing(fromDeg: number) {
+      if (ls.three) {
+        ls.dragDeg = null;
+        ls.kickDeg = fromDeg;
+        ls.wake?.();
+        return;
+      }
       if (reduceMotion) {
         swing!.style.transform = "";
         return;
@@ -271,6 +301,9 @@ export function HomeScene() {
       }
       const swap = () => {
         root.classList.toggle("lights-on", on);
+        ls.on = on;
+        ls.onAt = performance.now();
+        ls.wake?.();
         lamp!.classList.toggle("on", on);
         lamp!.classList.remove("warming");
         if (on && !reduceMotion) {
@@ -330,7 +363,10 @@ export function HomeScene() {
         if (!dragging) return;
         pull = Math.max(0, Math.min(96, e.clientY - startY));
         setCord(baseCord() + pull);
-        if (!reduceMotion) {
+        if (ls.three) {
+          ls.dragDeg = (pull / 96) * 2.4;
+          ls.wake?.();
+        } else if (!reduceMotion) {
           swing.classList.remove("settling");
           swing.style.transform = `rotate(${((pull / 96) * 2.4).toFixed(2)}deg)`;
         }
@@ -433,6 +469,8 @@ export function HomeScene() {
 
     return () => {
       ac.abort();
+      ls.on = false;
+      ls.dragDeg = null;
       cancelAnimationFrame(raf);
       timers.forEach((id) => clearTimeout(id));
       root.classList.remove("lights-on");
@@ -473,7 +511,7 @@ export function HomeScene() {
       </div>
 
       <div className="flash" id="flash" aria-hidden="true" />
-      <Pendant lampRef={lampRef} swingRef={swingRef} cordRef={cordRef} />
+      <Pendant lampRef={lampRef} swingRef={swingRef} cordRef={cordRef} three={three} lampState={lampState} reduceMotion={reduceMotionPref} />
     </div>
   );
 }
