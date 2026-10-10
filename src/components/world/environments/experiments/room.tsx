@@ -2,119 +2,285 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { MeshReflectorMaterial } from "@react-three/drei";
 import * as THREE from "three";
-import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { noiseTexture } from "@/components/home/studio-textures";
-import { tileMaterial, type TileUniforms } from "@/components/home/studio-tiles";
 import { world } from "@/components/world/store";
 import type { EnvironmentProps } from "@/components/world/types";
-import { DOOR, FLOOR_Y, ROOM, STEP, TUBE, WALL_Z } from "./config";
-import { FluorescentTube, tubeHum, tubeLevel, type TubeHandle } from "./fluorescent-tube";
+import { COUNTER, FLOOR_Y, GLOW, VOID } from "./config";
 
 /*
- * The Experiments room: the same building, another room. The walls are the
- * studio's cladding system (studio-tiles.ts) in cast concrete rather than
- * stone, so the courses carry on through the wall and the ambient is held
- * back the same way: nothing reads until a light finds it. The envelope is
- * designed, not boxed: the walls float on a shadow gap over a dark plinth,
- * the far wall steps back behind a full-height reveal to the right, a cast
- * bench runs along it, and a fluorescent batten on standoffs is the one real
- * light. You arrive in the dark. The tube sputters twice, showing the wall
- * and losing it, then holds, and the room is what its light reaches; a warm
- * line at the base of the left wall comes up last, dim, to give the depth.
+ * The Experiments room: not a room at all. Through the opening in the studio
+ * wall there is a deep void, a dark gradient lifted a touch at the horizon,
+ * with a slow haze gathered round two glows (the accent up and left behind the
+ * heading, a cold one low and right), a faint lab grid running off to the
+ * horizon, and motes drifting up through it. Everything is a shader on cheap
+ * geometry and nothing is lit, so it costs the same on any device; it is kept
+ * dim so the page in front, and the demos in their cards, carry the contrast.
+ * You arrive in the dark and the haze comes up; with reduced motion it is a
+ * still, and phones get fewer motes and a cheaper haze.
  */
 
-RectAreaLightUniformsLib.init();
+const [X0, X1] = VOID.x;
+const [Y0, Y1] = VOID.y;
+const [Z0, Z1] = VOID.z;
 
-const [X0, X1] = ROOM.x;
-const [Y0, Y1] = ROOM.y;
-const [ZF, ZB] = ROOM.z;
-/** Wall thickness, the shadow gap the walls float on, and the plinth's setback. */
-const T = 0.2;
-const GAP = 0.16;
-const SETBACK = 0.1;
-const FRONT_T = 0.12;
-const OPEN = { x0: DOOR.x - DOOR.width / 2, x1: DOOR.x + DOOR.width / 2, top: FLOOR_Y + DOOR.height };
-/** The recessed slot at the base of the left wall that houses the warm strip. */
-const SLOT = { top: Y0 + 0.3, back: X0 - 0.16 };
-const STRIP = { z0: ZF - 0.4, z1: ZB + 0.2 };
-const STRIP_LEN = STRIP.z0 - STRIP.z1;
-const STRIP_Z = (STRIP.z0 + STRIP.z1) / 2;
-/** The floor runs from the studio's floor edge (under the jambs) to the far wall. */
-const FLOOR = { x0: SLOT.back, x1: X1, z0: WALL_Z, z1: ZB - STEP.depth };
-/** The bench along the far wall, left of the reveal. */
-const BENCH = { x0: -5.3, x1: -0.35, h: 0.46, d: 0.78 };
+/** The palette, in sRGB: a cool near-black, the site's accent for the key, a slate blue for the counter. */
+const ZENITH = "#06070c";
+const HORIZON = "#0f141f";
+const NADIR = "#040405";
+const ACCENT = "#ffd9a0";
+const COLD = "#6f8fc4";
+const MOTE = "#e9e3d8";
 
-const WARM = "#ffb36b";
-/** Full-level intensities for the warm strip: a line that gives depth, not a second room light. */
-const WARM_RECT = 16;
-const WARM_POINT = 2.2;
-const WARM_BAR = 2.6;
-/** The room's own lights ramp when it is entered directly (seconds). */
+/** How strongly each glow shows at full level (linear, added to the gradient). */
+const KEY_INTENSITY = 0.032;
+const COUNTER_INTENSITY = 0.035;
+/** The grid: cell size (twice the cladding's 600 mm module) and opacity at full level. */
+const CELL = 1.2;
+const GRID_OPACITY = 0.2;
+/** Motes, and the space they drift through. */
+const MOTES = { high: 1400, low: 520 };
+const MOTE_BOX = { x: [-14, 12], y: [FLOOR_Y, 5.5], z: [-7.5, -32] } as const;
+const MOTE_OPACITY = 0.9;
+/** The room's own fade-in when it is entered directly (seconds). */
 const RAMP = 2.4;
+/** A still frame's clock, for reduced motion: the haze settled somewhere pleasant. */
+const STILL_TIME = 40;
 
-const TUBE_CENTRE = new THREE.Vector3(TUBE.x, TUBE.y, TUBE.z);
-/** The bounce the floor takes from the lit far wall: the tube's cold white. */
-const BOUNCE: [number, number, number] = [0.5, 0.6, 0.7];
+const KEY = new THREE.Vector3(GLOW.x, GLOW.y, GLOW.z);
+const color = (hex: string) => new THREE.Color(hex);
 
-type Box = { x: [number, number]; y: [number, number]; z: [number, number] };
-const box = (x: Box["x"], y: Box["y"], z: Box["z"]): Box => ({ x, y, z });
+const NOISE = /* glsl */ `
+float hash(vec3 p) {
+  p = fract(p * 0.3183099 + 0.1);
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float noise(vec3 x) {
+  vec3 i = floor(x);
+  vec3 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+    mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
+    f.z);
+}
+float fbm(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < OCTAVES; i++) {
+    s += a * noise(p);
+    p = p * 2.03 + vec3(1.7, 9.2, 3.1);
+    a *= 0.5;
+  }
+  return s;
+}
+`;
 
-/** The cast envelope: every face is clad by world position, so one merged mesh. */
-const SHELL: Box[] = [
-  // left wall, floating above the slot
-  box([X0 - T, X0], [SLOT.top, Y1 + T], [ZB - T, ZF]),
-  // back of the slot
-  box([SLOT.back - T, SLOT.back], [Y0 - 0.05, SLOT.top + 0.03], [ZB - T, ZF]),
-  // right wall, and a shallow pilaster that marks the far corner
-  box([X1, X1 + T], [Y0 + GAP, Y1 + T], [ZB - STEP.depth - T, ZF]),
-  box([X1 - 0.26, X1], [Y0 + GAP, Y1], [-15.0, -14.2]),
-  // far wall: the main plane to the left of the reveal, the stepped plane to the right, the return between them
-  box([SLOT.back - T, STEP.x], [Y0 + GAP, Y1 + T], [ZB - T, ZB]),
-  box([STEP.x, X1 + T], [Y0 + GAP, Y1 + T], [ZB - STEP.depth - T, ZB - STEP.depth]),
-  box([STEP.x - 0.02, STEP.x], [Y0 + GAP, Y1 + T], [ZB - STEP.depth, ZB]),
-  // ceiling
-  box([SLOT.back - T, X1 + T], [Y1, Y1 + T], [ZB - STEP.depth - T, ZF]),
-  // front wall: either side of the opening and the head above it
-  box([SLOT.back - T, OPEN.x0], [Y0 + GAP, Y1], [ZF - FRONT_T, ZF]),
-  box([OPEN.x1, X1 + T], [Y0 + GAP, Y1], [ZF - FRONT_T, ZF]),
-  box([OPEN.x0, OPEN.x1], [OPEN.top, Y1], [ZF - FRONT_T, ZF]),
-  // the bench: one cast block
-  box([BENCH.x0, BENCH.x1], [Y0, Y0 + BENCH.h], [ZB, ZB + BENCH.d]),
-];
+const WORLD_VERTEX = /* glsl */ `
+varying vec3 vWorld;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vWorld = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}
+`;
 
-/** The dark plinth the walls float on, set back into shadow. */
-const PLINTH: Box[] = [
-  box([X1 - SETBACK, X1 + T], [Y0 - 0.02, Y0 + GAP + 0.01], [ZB - STEP.depth - T, ZF]),
-  box([SLOT.back - T, STEP.x], [Y0 - 0.02, Y0 + GAP + 0.01], [ZB - T, ZB + SETBACK]),
-  box([STEP.x, X1 + T], [Y0 - 0.02, Y0 + GAP + 0.01], [ZB - STEP.depth - T, ZB - STEP.depth + SETBACK]),
-  box([SLOT.back - T, OPEN.x0], [Y0 - 0.02, Y0 + GAP + 0.01], [ZF - FRONT_T - SETBACK, ZF - SETBACK]),
-  box([OPEN.x1, X1 + T], [Y0 - 0.02, Y0 + GAP + 0.01], [ZF - FRONT_T - SETBACK, ZF - SETBACK]),
-];
+/**
+ * The backdrop: coloured by view direction, not by where the surface is, so
+ * it reads as depth without end. A box only because something has to carry
+ * the pixels; it starts behind the studio wall, so the studio never sees it.
+ */
+function backdropMaterial(high: boolean) {
+  return new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    defines: { OCTAVES: high ? 4 : 3 },
+    uniforms: {
+      uTime: { value: 0 },
+      uLevel: { value: 0 },
+      uKey: { value: KEY.clone() },
+      uCounter: { value: new THREE.Vector3(COUNTER.x, COUNTER.y, COUNTER.z) },
+      uZenith: { value: color(ZENITH) },
+      uHorizon: { value: color(HORIZON) },
+      uNadir: { value: color(NADIR) },
+      uKeyColor: { value: color(ACCENT).multiplyScalar(KEY_INTENSITY) },
+      uCounterColor: { value: color(COLD).multiplyScalar(COUNTER_INTENSITY) },
+    },
+    vertexShader: WORLD_VERTEX,
+    fragmentShader: /* glsl */ `
+uniform float uTime;
+uniform float uLevel;
+uniform vec3 uKey;
+uniform vec3 uCounter;
+uniform vec3 uZenith;
+uniform vec3 uHorizon;
+uniform vec3 uNadir;
+uniform vec3 uKeyColor;
+uniform vec3 uCounterColor;
+varying vec3 vWorld;
+${NOISE}
+void main() {
+  vec3 d = normalize(vWorld - cameraPosition);
 
-function boxesGeometry(boxes: Box[]) {
-  const parts = boxes.map(({ x, y, z }) => {
-    const g = new THREE.BoxGeometry(x[1] - x[0], y[1] - y[0], z[1] - z[0]);
-    g.translate((x[0] + x[1]) / 2, (y[0] + y[1]) / 2, (z[0] + z[1]) / 2);
-    return g;
+  // the gradient: lifted at the horizon, darker overhead and darker still underfoot
+  vec3 col = mix(uHorizon, uZenith, smoothstep(0.0, 0.6, d.y));
+  col = mix(col, uNadir, smoothstep(0.0, -0.3, d.y));
+
+  // the haze: slow, folded noise on the view direction, drifting sideways and back
+  vec3 q = d * 2.4 + vec3(uTime * 0.011, 0.0, -uTime * 0.007);
+  float n = fbm(q + 0.6 * fbm(q * 1.3 + vec3(0.0, uTime * 0.005, 4.0)));
+  n = smoothstep(0.3, 0.8, n);
+
+  // the glows: a broad body and a tight core round the key, a wide low wash round the counter
+  float k = 1.0 - max(dot(d, normalize(uKey - cameraPosition)), 0.0);
+  float c = 1.0 - max(dot(d, normalize(uCounter - cameraPosition)), 0.0);
+  float key = exp(-k * 22.0) * (0.35 + 1.1 * n) + exp(-k * 140.0) * 0.45;
+  float counter = exp(-c * 9.0) * (0.25 + 1.2 * n);
+  // and a little of both everywhere the haze is thick, so the dark has some weather in it
+  float drift = n * n * 0.35 * smoothstep(-0.15, 0.25, d.y);
+
+  col += (uKeyColor * (key + drift) + uCounterColor * (counter + drift)) * uLevel;
+  col *= 0.4 + 0.6 * uLevel;
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+
+  // fine grain, moving at film rate (still for reduced motion): it also breaks up banding in the dark gradient
+  vec2 g = gl_FragCoord.xy + floor(uTime * 24.0) * vec2(17.0, 31.0);
+  gl_FragColor.rgb += (fract(sin(dot(g, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * (3.0 / 255.0);
+}
+`,
   });
-  const merged = mergeGeometries(parts, false);
-  parts.forEach((p) => p.dispose());
-  return merged;
 }
 
-const smoothstep = (a: number, b: number, v: number) => {
-  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
+/**
+ * The lab floor: a faint grid in the accent, fading with distance and where
+ * its cells get too small to draw cleanly, a little brighter in the pool under
+ * the key glow, and every so often a soft scan line running away from the door.
+ */
+function gridMaterial() {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      uTime: { value: 0 },
+      uLevel: { value: 0 },
+      uScan: { value: 1 },
+      uKey: { value: KEY.clone() },
+      uColor: { value: color(ACCENT) },
+    },
+    vertexShader: WORLD_VERTEX,
+    fragmentShader: /* glsl */ `
+uniform float uTime;
+uniform float uLevel;
+uniform float uScan;
+uniform vec3 uKey;
+uniform vec3 uColor;
+varying vec3 vWorld;
+
+float grid(vec2 p, float cell, float width) {
+  vec2 g = p / cell;
+  vec2 fw = fwidth(g);
+  vec2 a = abs(fract(g - 0.5) - 0.5) / max(fw, 1e-4);
+  float line = 1.0 - min(min(a.x, a.y) / width, 1.0);
+  // cells down to a few pixels shimmer: let them go before they do
+  return line * (1.0 - smoothstep(0.12, 0.45, max(fw.x, fw.y)));
+}
+
+void main() {
+  vec2 p = vWorld.xz;
+  float lines = grid(p, ${CELL.toFixed(2)}, 1.0) * 0.4 + grid(p, ${(CELL * 5).toFixed(2)}, 1.3) * 0.6;
+
+  float far = exp(-distance(vWorld, cameraPosition) * 0.07);
+  float fromWall = smoothstep(${Z0.toFixed(2)}, ${(Z0 - 2).toFixed(2)}, vWorld.z);
+  vec2 k = p - uKey.xz;
+  float pool = exp(-dot(k, k) / 70.0);
+  float run = mod(uTime * 2.4, 70.0);
+  float scan = exp(-pow(${Z0.toFixed(2)} - vWorld.z - run, 2.0) / 2.0) * uScan;
+
+  float a = lines * far * fromWall * (0.5 + 1.3 * pool + 1.8 * scan);
+  gl_FragColor = vec4(uColor, a * ${GRID_OPACITY.toFixed(2)} * uLevel);
+  #include <colorspace_fragment>
+}
+`,
+  });
+}
+
+/** Motes: points rising slowly through the void, swaying, twinkling, a few in the accent. */
+function motes(count: number) {
+  const pos = new Float32Array(count * 3);
+  const seed = new Float32Array(count * 4);
+  const { x, y, z } = MOTE_BOX;
+  for (let i = 0; i < count; i++) {
+    pos[i * 3] = x[0] + Math.random() * (x[1] - x[0]);
+    pos[i * 3 + 1] = y[0] + Math.random() * (y[1] - y[0]);
+    // denser towards the back, so the near field stays clear
+    pos[i * 3 + 2] = z[0] + Math.sqrt(Math.random()) * (z[1] - z[0]);
+    seed.set([Math.random(), Math.random(), Math.random(), Math.random()], i * 4);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geometry.setAttribute("aSeed", new THREE.BufferAttribute(seed, 4));
+
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uTime: { value: 0 },
+      uLevel: { value: 0 },
+      uPixel: { value: 1 },
+      uColor: { value: color(MOTE) },
+      uAccent: { value: color(ACCENT) },
+    },
+    vertexShader: /* glsl */ `
+uniform float uTime;
+uniform float uLevel;
+uniform float uPixel;
+attribute vec4 aSeed;
+varying float vAlpha;
+varying float vTint;
+const float BOTTOM = ${y[0].toFixed(2)};
+const float HEIGHT = ${(y[1] - y[0]).toFixed(2)};
+void main() {
+  vec3 p = position;
+  float phase = aSeed.y * 6.2832;
+  p.y = BOTTOM + mod(p.y - BOTTOM + uTime * (0.04 + aSeed.x * 0.1), HEIGHT);
+  p.x += sin(uTime * 0.13 + phase) * 0.35;
+  p.z += cos(uTime * 0.11 + phase) * 0.35;
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float depth = -mv.z;
+  gl_PointSize = clamp((0.6 + aSeed.z * 1.7) * 14.0 * uPixel / depth, 1.2 * uPixel, 7.0 * uPixel);
+  float twinkle = 0.6 + 0.4 * sin(uTime * (0.5 + aSeed.w * 1.5) + aSeed.y * 40.0);
+  float edge = smoothstep(0.0, 1.2, p.y - BOTTOM) * smoothstep(0.0, 1.2, BOTTOM + HEIGHT - p.y);
+  vAlpha = twinkle * edge * smoothstep(34.0, 10.0, depth) * smoothstep(1.0, 3.0, depth) * uLevel;
+  vTint = step(0.86, aSeed.w);
+}
+`,
+    fragmentShader: /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uAccent;
+varying float vAlpha;
+varying float vTint;
+void main() {
+  float r = length(gl_PointCoord - 0.5);
+  float a = smoothstep(0.5, 0.0, r);
+  gl_FragColor = vec4(mix(uColor, uAccent, vTint), a * a * vAlpha * ${MOTE_OPACITY.toFixed(2)});
+  #include <colorspace_fragment>
+}
+`,
+  });
+  return { geometry, material };
+}
+
+/** The live uniforms of one of the room's shader meshes, reached through its ref rather than the memo. */
+const uniformsOf = (obj: THREE.Mesh | THREE.Points) => (obj.material as THREE.ShaderMaterial).uniforms as Record<string, THREE.IUniform | undefined> & Record<"uTime" | "uLevel", THREE.IUniform>;
 
 /** Per-frame working state, created on the first frame. */
 function createLive() {
   return {
     lights: 0,
     latched: false,
+    time: 0,
     frame: 0,
     el: null as HTMLElement | null,
     v: new THREE.Vector3(),
@@ -128,11 +294,9 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
   const scene = useThree((s) => s.scene);
 
   const group = useRef<THREE.Group>(null);
-  const tube = useRef<TubeHandle>(null);
-  const warmBar = useRef<THREE.MeshStandardMaterial>(null);
-  const warmRect = useRef<THREE.RectAreaLight>(null);
-  const warmPoint = useRef<THREE.PointLight>(null);
-  const floorLayer = useRef<THREE.Mesh>(null);
+  const backdrop = useRef<THREE.Mesh>(null);
+  const floor = useRef<THREE.Mesh>(null);
+  const dust = useRef<THREE.Points>(null);
   const liveRef = useRef<ReturnType<typeof createLive>>(null);
   const onReadyRef = useRef(onReady);
   const readyRef = useRef(false);
@@ -142,35 +306,31 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
   });
 
   const res = useMemo(() => {
-    const origin = { wallZ: ZB, floorY: FLOOR_Y };
+    const backdrop = backdropMaterial(high);
+    const grid = gridMaterial();
+    const dust = motes(high ? MOTES.high : MOTES.low);
     return {
-      shell: boxesGeometry(SHELL),
-      plinth: boxesGeometry(PLINTH),
-      // cast concrete: the studio's cladding, a shade cooler and more matte than the stone
-      concrete: tileMaterial("wall", origin, { color: "#3b3834", roughness: 0.86 }),
-      floorTiles: tileMaterial("floor", origin, { bounce: BOUNCE }),
-      floorNoise: noiseTexture(256, 6),
-      dark: new THREE.MeshStandardMaterial({ color: "#0a0a0a", roughness: 0.92, metalness: 0, envMapIntensity: 0 }),
-      steel: new THREE.MeshStandardMaterial({ color: "#121314", roughness: 0.5, metalness: 0.55, envMapIntensity: 0 }),
+      shell: new THREE.BoxGeometry(X1 - X0, Y1 - Y0, Z0 - Z1).translate((X0 + X1) / 2, (Y0 + Y1) / 2, (Z0 + Z1) / 2),
+      floor: new THREE.PlaneGeometry(X1 - X0, Z0 - Z1).rotateX(-Math.PI / 2).translate((X0 + X1) / 2, FLOOR_Y, (Z0 + Z1) / 2),
+      backdrop,
+      grid,
+      dust,
     };
-  }, []);
+  }, [high]);
 
   useEffect(
     () => () => {
       res.shell.dispose();
-      res.plinth.dispose();
-      res.concrete.dispose();
-      res.floorTiles.dispose();
-      res.floorNoise.dispose();
-      res.dark.dispose();
-      res.steel.dispose();
+      res.floor.dispose();
+      res.backdrop.dispose();
+      res.grid.dispose();
+      res.dust.geometry.dispose();
+      res.dust.material.dispose();
     },
     [res],
   );
 
-  // compile before reporting ready, so the transition never waits on a shader mid-move. The whole
-  // scene, not just this group: the room's lights change the light count, so the studio's
-  // materials need new programs too, and they should compile here rather than on the next frame.
+  // compile before reporting ready, so the transition never waits on a shader mid-move
   useEffect(() => {
     let alive = true;
     const done = () => {
@@ -204,7 +364,7 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
     [],
   );
 
-  useFrame(({ size }, rawDt) => {
+  useFrame(({ size, viewport }, rawDt) => {
     const dt = Math.min(rawDt, 1 / 20);
     liveRef.current ??= createLive();
     const live = liveRef.current;
@@ -221,27 +381,24 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
       live.latched = true;
     }
     live.lights = lights;
-    // leaving: the room dims as its own door mechanism begins
+    // leaving: the void dims as the studio's door mechanism begins
     const dim = tr && tr.from.id === "experiments" && tr.to.id !== "experiments" ? 1 - 0.85 * tr.progress.recess : 1;
 
-    /* ---- the tube first: it sputters, shows the wall, loses it, then holds ---- */
-    const base = tubeLevel(lights, s.reduceMotion) * dim;
-    const level = base >= 1 && !s.reduceMotion ? base * tubeHum(performance.now()) : base;
-    tube.current?.apply(level);
-    // the floor takes a little of the lit far wall back
-    const fu = (floorLayer.current?.material as THREE.Material | undefined)?.userData.uniforms as TileUniforms | undefined;
-    if (fu) {
-      fu.uBulb.value.copy(TUBE_CENTRE);
-      fu.uBulbLevel.value = level * 0.6;
+    /* ---- the haze comes up, then everything drifts on its own clock ---- */
+    const u = Math.min(1, Math.max(0, (lights - 0.05) / 0.8));
+    const base = u * u * (3 - 2 * u);
+    const level = base * dim;
+    live.time = s.reduceMotion ? STILL_TIME : live.time + dt;
+    for (const obj of [backdrop.current, floor.current, dust.current]) {
+      const uni = obj && uniformsOf(obj);
+      if (!uni) continue;
+      uni.uTime.value = live.time;
+      uni.uLevel.value = level;
+      if (uni.uScan) uni.uScan.value = s.reduceMotion ? 0 : 1;
+      if (uni.uPixel) uni.uPixel.value = viewport.dpr;
     }
 
-    /* ---- the warm line comes up last, slowly, once the tube is steady ---- */
-    const warm = smoothstep(0.74, 1, lights) * dim;
-    if (warmBar.current) warmBar.current.emissiveIntensity = warm * WARM_BAR;
-    if (warmRect.current) warmRect.current.intensity = warm * WARM_RECT;
-    if (warmPoint.current) warmPoint.current.intensity = warm * WARM_POINT;
-
-    /* ---- the page's heading takes its light from the tube ---- */
+    /* ---- the page's heading takes its light from the key glow ---- */
     if (live.frame++ % 60 === 0 || (live.el && !live.el.isConnected)) {
       const el = document.querySelector<HTMLElement>("[data-room-light]");
       if (el !== live.el) {
@@ -251,7 +408,7 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
     }
     const el = live.el;
     if (el) {
-      const p = live.v.copy(TUBE_CENTRE).project(camera);
+      const p = live.v.copy(KEY).project(camera);
       if (p.z < 1) {
         const r = el.getBoundingClientRect();
         const lx = size.left + ((p.x + 1) / 2) * size.width - r.left;
@@ -273,59 +430,10 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
 
   return (
     <group ref={group}>
-      {/* the cast envelope and the bench, one cladding */}
-      <mesh geometry={res.shell} material={res.concrete} castShadow={high} receiveShadow />
-      {/* the shadow gap the walls float on */}
-      <mesh geometry={res.plinth} material={res.dark} receiveShadow />
-      {/* a blackened steel flat edging the reveal, the one line that catches the light */}
-      <mesh position={[STEP.x + 0.02, (Y0 + GAP + Y1) / 2, ZB - STEP.depth + 0.02]} material={res.steel} castShadow={high}>
-        <boxGeometry args={[0.04, Y1 - Y0 - GAP, 0.04]} />
-      </mesh>
-
-      {/* polished concrete floor, with the cladding's joints and the shadow by the far wall drawn over it */}
-      <mesh rotation-x={-Math.PI / 2} position={[(FLOOR.x0 + FLOOR.x1) / 2, FLOOR_Y, (FLOOR.z0 + FLOOR.z1) / 2]} receiveShadow>
-        <planeGeometry args={[FLOOR.x1 - FLOOR.x0, FLOOR.z0 - FLOOR.z1]} />
-        {high ? (
-          <MeshReflectorMaterial
-            resolution={512}
-            blur={[420, 140]}
-            mixBlur={1}
-            mixStrength={1.5}
-            mixContrast={1}
-            depthScale={1.2}
-            minDepthThreshold={0.3}
-            maxDepthThreshold={1.4}
-            roughness={0.88}
-            roughnessMap={res.floorNoise}
-            metalness={0.35}
-            color="#0d0d0d"
-            envMapIntensity={0}
-            mirror={0}
-          />
-        ) : (
-          <meshStandardMaterial color="#0e0e0e" roughness={0.55} roughnessMap={res.floorNoise} metalness={0.1} envMapIntensity={0} />
-        )}
-      </mesh>
-      <mesh
-        ref={floorLayer}
-        rotation-x={-Math.PI / 2}
-        position={[(FLOOR.x0 + FLOOR.x1) / 2, FLOOR_Y + 0.002, (FLOOR.z0 + FLOOR.z1) / 2]}
-        material={res.floorTiles}
-        receiveShadow
-      >
-        <planeGeometry args={[FLOOR.x1 - FLOOR.x0, FLOOR.z0 - FLOOR.z1]} />
-      </mesh>
-
-      {/* the warm line: a diffused bar at the back of the slot */}
-      <mesh position={[SLOT.back + 0.0125, Y0 + 0.1, STRIP_Z]}>
-        <boxGeometry args={[0.025, 0.05, STRIP_LEN]} />
-        <meshStandardMaterial ref={warmBar} color="#1c1612" roughness={0.6} emissive={WARM} emissiveIntensity={0} envMapIntensity={0} />
-      </mesh>
-      {/* its light: a long rect facing up that washes the lower wall in a band, and a point near the far end that pools on the floor */}
-      <rectAreaLight ref={warmRect} position={[X0 + 0.17, Y0 + 0.03, STRIP_Z]} rotation-x={Math.PI / 2} width={0.26} height={STRIP_LEN} color={WARM} intensity={0} />
-      <pointLight ref={warmPoint} position={[X0 + 0.45, Y0 + 0.5, ZB + 1.6]} color={WARM} intensity={0} decay={2} distance={7} />
-
-      <FluorescentTube ref={tube} high={high} />
+      <mesh ref={backdrop} geometry={res.shell} material={res.backdrop} renderOrder={-1} frustumCulled={false} />
+      <mesh ref={floor} geometry={res.floor} material={res.grid} renderOrder={1} />
+      {/* the motes move in the vertex shader, so their bounds are never where three thinks */}
+      <points ref={dust} geometry={res.dust.geometry} material={res.dust.material} renderOrder={2} frustumCulled={false} />
     </group>
   );
 }
