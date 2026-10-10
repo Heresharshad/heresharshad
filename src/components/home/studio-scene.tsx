@@ -229,7 +229,7 @@ function CameraRig({ stateRef, sharedRef }: { stateRef: RefObject<StudioState>; 
  * DOM half (scroll, pointer, the chain) writes into `world.studio`, so the
  * scene outlives the page while the camera leaves through the wall.
  */
-export default function StudioScene({ high, onReady }: EnvironmentProps) {
+export default function StudioScene({ high, reflections, onReady }: EnvironmentProps) {
   const stateRef = useRef<StudioState>(world.get().studio);
   const sharedRef = useRef<Shared>({
     rig: { anchor: new THREE.Vector3(2, 4, 0), cordLength: 3 },
@@ -277,7 +277,7 @@ export default function StudioScene({ high, onReady }: EnvironmentProps) {
     <>
       <CameraRig stateRef={stateRef} sharedRef={sharedRef} />
       <CursorLight stateRef={stateRef} sharedRef={sharedRef} />
-      <StudioRoom high={high} sharedRef={sharedRef} wallMaterial={wall} />
+      <StudioRoom high={high} reflections={reflections} sharedRef={sharedRef} wallMaterial={wall} />
       <StudioDoor high={high} wallMaterial={wall} />
       <Mechanism stateRef={stateRef} sharedRef={sharedRef} high={high} />
       <Pendant stateRef={stateRef} sharedRef={sharedRef} high={high} />

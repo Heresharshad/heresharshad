@@ -90,7 +90,7 @@ export function WorldLayer() {
     <>
       {booted && tier !== "none" && (
         <WorldBoundary>
-          <WorldCanvas high={tier === "high"} reduceMotion={reduceMotion} />
+          <WorldCanvas tier={tier} reduceMotion={reduceMotion} />
         </WorldBoundary>
       )}
       <div className="world-veil" aria-hidden="true" />

@@ -56,12 +56,14 @@ function useNotes() {
 
 type StudioRoomProps = {
   high: boolean;
+  /** The reflective floor (it draws the scene again): high tier only. */
+  reflections: boolean;
   sharedRef: RefObject<{ out: BulbOut }>;
   /** The cladding, when something else (the concealed doorway) shares it. */
   wallMaterial?: THREE.Material;
 };
 
-export function StudioRoom({ high, sharedRef, wallMaterial }: StudioRoomProps) {
+export function StudioRoom({ high, reflections, sharedRef, wallMaterial }: StudioRoomProps) {
   const ownWall = useMemo(() => wallMaterial ?? tileMaterial("wall", { wallZ: WALL_Z, floorY: FLOOR_Y }), [wallMaterial]);
   const wall = ownWall;
   const floorTiles = useMemo(() => tileMaterial("floor", { wallZ: WALL_Z, floorY: FLOOR_Y }), []);
@@ -103,7 +105,7 @@ export function StudioRoom({ high, sharedRef, wallMaterial }: StudioRoomProps) {
       {/* polished concrete floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y, WALL_Z + 20]} receiveShadow>
         <planeGeometry args={[90, 40]} />
-        {high ? (
+        {reflections ? (
           <MeshReflectorMaterial
             resolution={512}
             blur={[420, 140]}

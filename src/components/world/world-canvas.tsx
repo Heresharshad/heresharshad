@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { CameraPath } from "./camera-path";
 import { rooms } from "./registry";
 import { useWorld, world, type ActiveTransition } from "./store";
-import type { EnvironmentId, EnvironmentProps } from "./types";
+import type { EnvironmentId, EnvironmentProps, Tier } from "./types";
 
 const damp = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 
@@ -17,7 +17,7 @@ const scenes: Partial<Record<EnvironmentId, ComponentType<EnvironmentProps>>> = 
 );
 
 /** Mounts one room's scene and reports when it is ready; forgets it on unmount. */
-function RoomMount({ id, high }: { id: EnvironmentId; high: boolean }) {
+function RoomMount({ id, high, reflections }: { id: EnvironmentId; high: boolean; reflections: boolean }) {
   const Scene = scenes[id];
   useEffect(
     () => () => {
@@ -26,7 +26,7 @@ function RoomMount({ id, high }: { id: EnvironmentId; high: boolean }) {
     [id],
   );
   if (!Scene) return null;
-  return <Scene id={id} high={high} onReady={() => world.set((w) => (w.ready.includes(id) ? {} : { ready: [...w.ready, id] }))} />;
+  return <Scene id={id} high={high} reflections={reflections} onReady={() => world.set((w) => (w.ready.includes(id) ? {} : { ready: [...w.ready, id] }))} />;
 }
 
 /**
@@ -115,8 +115,37 @@ function Present() {
   return null;
 }
 
-export default function WorldCanvas({ high, reduceMotion }: { high: boolean; reduceMotion: boolean }) {
-  const [dpr, setDpr] = useState(() => Math.min(window.devicePixelRatio || 1, high ? 1.75 : 1.4));
+/** Most device pixels per CSS pixel each tier draws at; slow frames step it down to the floor, steady ones back up. */
+const DPR_CAP: Record<Tier, number> = { none: 1, low: 1.4, mid: 2, high: 1.75 };
+const DPR_FLOOR = 1;
+const DPR_STEP = 0.25;
+/** After this many changes the resolution stays where it is, so it never hunts back and forth. */
+const MAX_CHANGES = 8;
+
+/**
+ * Steps the resolution down a little while frames are slow (under 40 fps) and
+ * back up once they hold, rather than dropping straight to the floor for good.
+ * Starts after the first frame, so loading and shader compiles are not
+ * counted; after a few changes it settles where it is.
+ */
+function Resolution({ dpr, cap, setDpr }: { dpr: number; cap: number; setDpr: (dpr: number) => void }) {
+  const started = useWorld((s) => s.firstFrame);
+  // real changes only: a slow reading at the floor (or a fast one at the cap) changes nothing
+  const [changes, setChanges] = useState(0);
+  if (!started || changes >= MAX_CHANGES) return null;
+  const step = (by: number) => {
+    const next = Math.min(cap, Math.max(DPR_FLOOR, Math.round((dpr + by) * 100) / 100));
+    if (next === dpr) return;
+    setDpr(next);
+    setChanges((n) => n + 1);
+  };
+  return <PerformanceMonitor onDecline={() => step(-DPR_STEP)} onIncline={() => step(DPR_STEP)} />;
+}
+
+export default function WorldCanvas({ tier, reduceMotion }: { tier: Tier; reduceMotion: boolean }) {
+  const high = tier === "high" || tier === "mid";
+  const cap = Math.min(window.devicePixelRatio || 1, DPR_CAP[tier]);
+  const [dpr, setDpr] = useState(cap);
   const mounted = useWorld((s) => s.mounted);
   const idle = mounted.length === 0;
   const gl = useMemo(() => ({ antialias: high, powerPreference: "high-performance" as const }), [high]);
@@ -126,7 +155,7 @@ export default function WorldCanvas({ high, reduceMotion }: { high: boolean; red
       className="world-canvas"
       aria-hidden="true"
       dpr={dpr}
-      shadows={high ? "percentage" : false}
+      shadows={tier === "high" ? "percentage" : false}
       frameloop={reduceMotion || idle ? "demand" : "always"}
       gl={gl}
       camera={{ fov: 30, near: 0.1, far: 80, position: [0, 0.3, 8] }}
@@ -138,7 +167,7 @@ export default function WorldCanvas({ high, reduceMotion }: { high: boolean; red
     >
       <color attach="background" args={["#060606"]} />
       <fog attach="fog" args={["#060606", 14, 34]} />
-      <PerformanceMonitor onDecline={() => setDpr(1)} />
+      <Resolution dpr={dpr} cap={cap} setDpr={setDpr} />
       {/* the building's base light, shared by every room so nothing pops when a room is disposed:
           reflections only (a soft window top-left, a warm card right), a cool almost-nothing fill, a rim from behind-left */}
       <Environment frames={1} resolution={64}>
@@ -152,7 +181,7 @@ export default function WorldCanvas({ high, reduceMotion }: { high: boolean; red
       {/* one boundary per room: a room loading must never unmount the one you are standing in */}
       {mounted.map((id) => (
         <Suspense key={id} fallback={null}>
-          <RoomMount id={id} high={high} />
+          <RoomMount id={id} high={high} reflections={tier === "high"} />
         </Suspense>
       ))}
       <WorldCamera />

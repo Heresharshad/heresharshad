@@ -122,7 +122,7 @@ function createLive() {
   };
 }
 
-export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
+export default function ExperimentsRoom({ high, reflections, onReady }: EnvironmentProps) {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const scene = useThree((s) => s.scene);
@@ -288,7 +288,7 @@ export default function ExperimentsRoom({ high, onReady }: EnvironmentProps) {
       {/* polished concrete floor, with the cladding's joints and the shadow by the far wall drawn over it */}
       <mesh rotation-x={-Math.PI / 2} position={[(FLOOR.x0 + FLOOR.x1) / 2, FLOOR_Y, (FLOOR.z0 + FLOOR.z1) / 2]} receiveShadow>
         <planeGeometry args={[FLOOR.x1 - FLOOR.x0, FLOOR.z0 - FLOOR.z1]} />
-        {high ? (
+        {reflections ? (
           <MeshReflectorMaterial
             resolution={512}
             blur={[420, 140]}
