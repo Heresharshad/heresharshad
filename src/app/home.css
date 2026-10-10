@@ -320,6 +320,94 @@ html[data-world-leaving] .cursor-ring, html[data-world-leaving] .cursor-dot { op
   .hero-name { font-size: min(12vw, 30vh); }
 }
 
+/* ---- the first visit's loader (src/components/home/intro-curtain.tsx) ----
+ * Off unless the inline script switched it on during parsing (data-on). A cord
+ * and a warming filament where the pendant will hang, the status bottom left
+ * where the hero's meta sits. Revealed from the bulb outwards (--intro-r). */
+@property --intro-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.intro { display: none; }
+.intro[data-on] {
+  /* the pendant in the hero's opening frame (studio-scene.tsx, WIDE[0] / NARROW[0]) */
+  --bx: 88.5%; --by: 50%;
+  position: fixed; inset: 0; z-index: 45; display: block; overflow: hidden;
+  background: var(--ground); color: var(--ink);
+  -webkit-mask-image: radial-gradient(circle at var(--bx) var(--by), transparent calc(var(--intro-r) - 40vmax), #000 var(--intro-r));
+  mask-image: radial-gradient(circle at var(--bx) var(--by), transparent calc(var(--intro-r) - 40vmax), #000 var(--intro-r));
+  --intro-r: 0px;
+}
+/* the JavaScript never arrived: lift anyway, rather than hold the page forever */
+.intro[data-on]:not([data-js]) { animation: intro-failsafe 0.8s ease 15s forwards; }
+@keyframes intro-failsafe { to { opacity: 0; visibility: hidden; } }
+/* no scrolling under the loader while the app runs it; the gutter is kept so nothing shifts when it lifts */
+html:has(.intro[data-on]) { scrollbar-gutter: stable; }
+html:has(.intro[data-on][data-js]:not(.is-revealing)) { overflow: hidden; }
+
+.intro-cord {
+  position: absolute; left: var(--bx); top: 0; width: 1px; height: calc(var(--by) - 9px);
+  background: linear-gradient(rgba(243, 237, 226, 0), rgba(243, 237, 226, 0.22) 40%, rgba(243, 237, 226, 0.3));
+  transform-origin: top; animation: intro-drop 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.intro-bulb {
+  position: absolute; left: var(--bx); top: var(--by); width: 9px; height: 13px; margin: -6px 0 0 -4.5px;
+  border-radius: 45% 45% 50% 50%; background: radial-gradient(circle at 50% 60%, #ffe9c8, #c99a62 70%);
+  box-shadow: 0 0 10px rgba(255, 196, 128, 0.6);
+  animation: intro-in 1s ease 0.6s both;
+}
+/* the filament warming: a slow breath of light, never a flash */
+.intro-bulb::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 520px; height: 520px; margin: -260px 0 0 -260px;
+  border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 190, 120, 0.16), rgba(255, 190, 120, 0.05) 35%, transparent 68%);
+  animation: intro-breathe 3.6s ease-in-out 1.2s infinite alternate both;
+}
+.intro-panel {
+  position: absolute; left: var(--pad-x); bottom: clamp(28px, 6vh, 64px); width: min(320px, calc(100% - 2 * var(--pad-x)));
+  animation: intro-in 0.9s ease 0.2s both;
+}
+.intro-brand { margin: 0 0 22px; font-weight: 900; font-stretch: 125%; font-size: 15px; letter-spacing: -0.005em; text-transform: uppercase; }
+.intro-status {
+  display: flex; gap: 14px; margin: 0 0 12px;
+  font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: #8d867c;
+}
+.intro-status span:first-child { color: rgba(var(--accent-rgb), 0.75); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+/* indeterminate: a short run of light along a wire, like the hero's status rule */
+.intro-line { position: relative; display: block; width: 100%; height: 1px; overflow: hidden; background: var(--ash); }
+.intro-line::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 28%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.8);
+  animation: intro-run 2.2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+}
+.intro-slow { margin-top: 18px; font: 500 11px/1.6 var(--font-mono); letter-spacing: 0.06em; color: #8d867c; }
+.intro-slow[hidden] { display: none; }
+.intro-slow p { margin: 0 0 8px; }
+.intro-slow button {
+  padding: 6px 0; font: inherit; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.4); cursor: pointer;
+}
+.intro-slow button:focus-visible { outline: 1px solid var(--accent); outline-offset: 4px; }
+
+/* the reveal: the dark draws back from the bulb, the loader's own light goes with it */
+.intro.is-revealing {
+  --intro-r: 190vmax; opacity: 0; pointer-events: none;
+  transition: --intro-r 1.5s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.5s ease 1.1s;
+}
+.intro.is-revealing .intro-panel, .intro.is-revealing .intro-cord { opacity: 0; transition: opacity 0.4s ease; }
+.intro.is-revealing .intro-bulb { opacity: 0; transition: opacity 0.9s ease 0.2s; }
+
+@keyframes intro-drop { from { transform: scaleY(0); } }
+@keyframes intro-in { from { opacity: 0; } }
+@keyframes intro-breathe { from { opacity: 0.45; transform: scale(0.92); } to { opacity: 1; transform: scale(1.04); } }
+@keyframes intro-run { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
+
+@media (max-aspect-ratio: 85/100) and (max-width: 899px) {
+  .intro[data-on] { --bx: 52.5%; --by: 32%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-cord, .intro-bulb, .intro-bulb::before, .intro-panel { animation: none; }
+  .intro-line::after { animation: none; left: 36%; }
+  .intro.is-revealing { --intro-r: 0px; transition: opacity 0.3s ease; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-scroll i::after { animation: none; transform: none; }
   .home-nav a, .home-nav a::after, .index-title, .more-link::after, .contact-handle, .hero-status b::after { transition: none; }

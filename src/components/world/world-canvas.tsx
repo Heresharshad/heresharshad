@@ -89,9 +89,29 @@ function WorldCamera() {
 function Wake({ reduceMotion }: { reduceMotion: boolean }) {
   const invalidate = useThree((s) => s.invalidate);
   const mounted = useWorld((s) => s.mounted.length);
+  const ready = useWorld((s) => s.ready.length);
   useEffect(() => {
     if (reduceMotion && mounted) invalidate();
-  }, [reduceMotion, mounted, invalidate]);
+  }, [reduceMotion, mounted, ready, invalidate]);
+  return null;
+}
+
+/**
+ * Draws the frame, but only once the room on screen has compiled: a room
+ * still compiling would otherwise compile on its first draw, synchronously,
+ * freezing the main thread for a second or more. Until then the canvas keeps
+ * whatever it last showed (nothing, on a first visit). Journeys are left
+ * alone: the source room is drawn while the destination compiles. The first
+ * complete frame is reported once, for the first visit's loader.
+ */
+function Present() {
+  useFrame(({ gl, scene, camera }) => {
+    const s = world.get();
+    const ready = !s.active || s.ready.includes(s.active);
+    if (!ready && !s.transition) return;
+    gl.render(scene, camera);
+    if (ready && s.active && !s.firstFrame) world.set({ firstFrame: true });
+  }, 1);
   return null;
 }
 
@@ -128,6 +148,7 @@ export default function WorldCanvas({ high, reduceMotion }: { high: boolean; red
       <hemisphereLight args={["#27303f", "#000000", 0.22]} />
       <directionalLight position={[-6, 3, -3]} intensity={0.3} color="#a9bad4" />
       <Wake reduceMotion={reduceMotion} />
+      <Present />
       {/* one boundary per room: a room loading must never unmount the one you are standing in */}
       {mounted.map((id) => (
         <Suspense key={id} fallback={null}>

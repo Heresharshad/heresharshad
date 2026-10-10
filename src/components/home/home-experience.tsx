@@ -6,7 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 import { detectTier } from "@/components/world/device";
-import { world } from "@/components/world/store";
+import { useWorld, world } from "@/components/world/store";
 import type { Tier } from "@/components/world/types";
 import { useDeclareEnvironment } from "@/components/world/use-environment";
 import type { StudioState } from "./studio-state";
@@ -25,6 +25,8 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 export function HomeExperience() {
   const stateRef = useRef<StudioState>(world.get().studio);
   const tier = useSyncExternalStore(noopSubscribe, detectTier, () => "none" as Tier);
+  // no WebGL, or the world could not start: the still studio, lit
+  const flat = useWorld((s) => s.failed) || tier === "none";
   useDeclareEnvironment("studio");
   const reduceMotion = usePrefersReducedMotion();
   const chainRef = useRef<HTMLButtonElement>(null);
@@ -44,17 +46,17 @@ export function HomeExperience() {
     state.els.chain = chain;
     state.els.heroName = document.querySelector<HTMLElement>("[data-hero-name]");
     state.els.coords = document.querySelector<HTMLElement>("[data-coords]");
-    if (tier === "none") root.classList.add("studio-on", "studio-flat");
+    if (flat) root.classList.add("studio-on", "studio-flat");
     return () => {
       root.classList.remove("studio-on", "studio-flat");
       state.els = { chain: null, heroName: null, coords: null };
     };
-  }, [tier]);
+  }, [flat]);
 
   useEffect(() => {
     const state = stateRef.current;
     const chain = chainRef.current;
-    if (!chain || tier === "none") return;
+    if (!chain || flat) return;
     const root = document.documentElement;
     const ac = new AbortController();
     const { signal } = ac;
@@ -197,7 +199,7 @@ export function HomeExperience() {
       state.scene = 0;
       root.classList.remove("studio-on");
     };
-  }, [tier]);
+  }, [flat]);
 
   /* ---- a minimal cursor: a dot, and a ring that lags and reacts to what is under it ---- */
   useEffect(() => {
@@ -272,7 +274,7 @@ export function HomeExperience() {
 
   return (
     <>
-      {tier === "none" && <div className="studio-fallback" aria-hidden="true" />}
+      {flat && <div className="studio-fallback" aria-hidden="true" />}
       <div className="studio-grain" aria-hidden="true" />
       <div className="frame-marks" aria-hidden="true">
         <i />
@@ -280,7 +282,7 @@ export function HomeExperience() {
         <i />
         <i />
       </div>
-      {tier !== "none" && (
+      {!flat && (
         <button
           ref={chainRef}
           type="button"

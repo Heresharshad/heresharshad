@@ -40,6 +40,12 @@ export type WorldState = {
   transition: ActiveTransition | null;
   /** True while the transition controller owns the camera; rooms must not write it. */
   cameraLocked: boolean;
+  /** A ready room has been drawn: the first complete frame is on screen. Set once and kept. */
+  firstFrame: boolean;
+  /** The first visit's loader still covers the page (home/intro-curtain.tsx): rooms hold their opening moves. */
+  curtain: boolean;
+  /** The world could not start (a chunk failed to load, no WebGL context): pages show their still fallback. */
+  failed: boolean;
   /** Pointer in NDC, for the rooms' gentle parallax. */
   pointer: { x: number; y: number; active: boolean };
   /** The homepage's DOM <-> WebGL state. Lives here so the studio scene outlives the page during a transition. */
@@ -66,6 +72,9 @@ let state: WorldState = g.__worldState ?? {
   active: null,
   transition: null,
   cameraLocked: false,
+  firstFrame: false,
+  curtain: false,
+  failed: false,
   pointer: { x: 0, y: 0, active: false },
   studio: createStudioState(),
   camera: null,
