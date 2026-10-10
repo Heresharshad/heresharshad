@@ -1,5 +1,4 @@
 import gsap from "gsap";
-import * as THREE from "three";
 import { rooms } from "./registry";
 import { world } from "./store";
 import type { EnvironmentId, TransitionProgress } from "./types";
@@ -63,7 +62,8 @@ export async function enter(href: string): Promise<boolean> {
   const narrow = window.innerWidth / window.innerHeight < 0.85 && window.innerWidth < 900;
   const { timing } = narrow && entry.narrow ? entry.narrow : entry;
 
-  const a = new THREE.Vector3();
+  // the camera's own vector type: importing three here would put all of it in every page's first load
+  const a = camera.position.clone();
   camera.getWorldDirection(a).multiplyScalar(8).add(camera.position);
   const progress = freshProgress();
   world.set({
@@ -155,11 +155,14 @@ export function cutTo(id: EnvironmentId | null) {
     setTimeout(() => {
       swap();
       cutting = null;
-      // the new room renders a frame or two before the veil lifts
-      setTimeout(() => {
-        root().removeAttribute("data-world-veil");
-        resolve();
-      }, 120);
+      // the canvas holds its last frame until the new room has compiled (world-canvas.tsx), so the
+      // veil waits for that, then for a frame or two of the new room, before it lifts
+      const lift = () =>
+        setTimeout(() => {
+          root().removeAttribute("data-world-veil");
+          resolve();
+        }, 120);
+      world.waitFor((w) => !id || w.active !== id || w.ready.includes(id), 6000).then(lift, lift);
     }, 380);
   });
 }

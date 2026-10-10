@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, type RefObject } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { StudioDoor } from "@/components/world/environments/studio-door";
 import { world } from "@/components/world/store";
@@ -163,7 +163,8 @@ function CameraRig({ stateRef, sharedRef }: { stateRef: RefObject<StudioState>; 
     const hand = p.active && !state.chainHover && !state.drag ? 1 - near : 0;
     t.px = rm ? 0 : damp(t.px, p.x * hand, 1.6, dt);
     t.py = rm ? 0 : damp(t.py, p.y * hand, 1.6, dt);
-    t.intro = rm ? 0 : damp(t.intro, 0, 0.9, dt);
+    // the opening drift waits for the first visit's loader to lift, so it plays as the room comes into view
+    t.intro = rm ? 0 : world.get().curtain ? 1 : damp(t.intro, 0, 0.9, dt);
     t.push = rm ? 0 : damp(t.push, state.on ? 1 : 0, 1.4, dt);
     // while a journey through the wall runs, the world's transition path holds the camera
     if (world.get().cameraLocked) return;
@@ -248,10 +249,29 @@ export default function StudioScene({ high, onReady }: EnvironmentProps) {
   // the cladding is shared by the wall and the doorway cut into it
   const wall = useMemo(() => tileMaterial("wall", { wallZ: WALL_Z, floorY: FLOOR_Y }), []);
   useEffect(() => () => wall.dispose(), [wall]);
+
+  // compile every program before reporting ready, off the main thread where the browser can
+  // (KHR_parallel_shader_compile): compiled on the first draw instead, the studio's ~40 programs
+  // held the main thread for 1.5-2 s. The world does not draw the room until it is ready.
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const onReadyRef = useRef(onReady);
   useEffect(() => {
-    onReady();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    onReadyRef.current = onReady;
+  });
+  useEffect(() => {
+    let alive = true;
+    const done = () => alive && onReadyRef.current();
+    try {
+      gl.compileAsync(scene, camera).then(done, done);
+    } catch {
+      done();
+    }
+    return () => {
+      alive = false;
+    };
+  }, [gl, scene, camera]);
 
   return (
     <>

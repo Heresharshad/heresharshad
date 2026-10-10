@@ -1,16 +1,37 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { Component, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 import { cutTo, pageChanged } from "./controller";
 import { detectTier } from "./device";
+import { rooms } from "./registry";
 import { useWorld, world } from "./store";
 import type { Tier } from "./types";
 
-const WorldCanvas = dynamic(() => import("./world-canvas"), { ssr: false });
+const loadCanvas = () => import("./world-canvas");
+const WorldCanvas = dynamic(loadCanvas, { ssr: false });
 const noopSubscribe = () => () => {};
+
+/**
+ * If the world cannot start (its chunk fails to load, or the browser will not
+ * give it a WebGL context), the page carries on without it: the world is
+ * marked failed, pages show their still fallback, and nothing is retried.
+ */
+class WorldBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error("world: could not start", error);
+    world.set({ failed: true });
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /**
  * Lives in the root layout, so the one WebGL renderer survives every route
@@ -29,6 +50,13 @@ export function WorldLayer() {
     world.set({ tier, reduceMotion, navigate: (href) => router.push(href), prefetch: (href) => router.prefetch(href) });
     world.get().studio.reduceMotion = reduceMotion;
   }, [tier, reduceMotion, router]);
+
+  // fetch the canvas and the declared room's scene side by side, rather than the room only once the canvas has mounted
+  useEffect(() => {
+    if (!declared || tier === "none") return;
+    void loadCanvas().catch(() => {});
+    void rooms[declared]?.load().catch(() => {});
+  }, [declared, tier]);
 
   useEffect(() => {
     pageChanged(declared);
@@ -60,7 +88,11 @@ export function WorldLayer() {
 
   return (
     <>
-      {booted && tier !== "none" && <WorldCanvas high={tier === "high"} reduceMotion={reduceMotion} />}
+      {booted && tier !== "none" && (
+        <WorldBoundary>
+          <WorldCanvas high={tier === "high"} reduceMotion={reduceMotion} />
+        </WorldBoundary>
+      )}
       <div className="world-veil" aria-hidden="true" />
     </>
   );
