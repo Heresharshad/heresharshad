@@ -136,7 +136,7 @@ export function ExperimentsScene() {
             <TransitionLink href="/experiments">
               <span className="index-num">E.{String(i + 1).padStart(2, "0")}</span>
               <span className="index-title">{e.title}</span>
-              <span className="index-tags">{e.tags.join(" · ")}</span>
+              <span className="index-tags">{e.stack.join(" · ")}</span>
             </TransitionLink>
             <p className="index-desc">{e.description}</p>
           </li>

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { UnderConstruction } from "@/components/layout/under-construction";
-import { experiments } from "@/components/experiments/registry";
-import { Badge } from "@/components/ui/badge";
+import { ExperimentCard, NextUp } from "@/components/experiments/experiment-card";
+import { experiments, OPEN_SLOTS } from "@/components/experiments/registry";
 import { RoomPage } from "@/components/world/room-page";
 
 export const metadata: Metadata = { title: "Experiments" };
@@ -9,39 +8,22 @@ export const metadata: Metadata = { title: "Experiments" };
 /** The lab: a concrete room behind the studio wall, lit by a fluorescent batten. The scene is src/components/world/environments/experiments. */
 export default function ExperimentsPage() {
   return (
-    <RoomPage id="experiments" className="flex-1 px-(--pad-x) pt-16">
-      <div className="mb-14 max-w-3xl" data-reveal>
-        <p className="room-eyebrow mb-4 text-xs uppercase tracking-[0.14em]">02 Experiments</p>
-        <h1 className="room-title page-wordmark text-[clamp(26px,8.2vw,112px)] [overflow-wrap:anywhere] uppercase" data-room-light>
+    <RoomPage id="experiments" className="flex-1 px-(--pad-x) pt-10">
+      <div className="mb-10" data-reveal>
+        <p className="room-eyebrow mb-4 text-xs uppercase tracking-[0.14em]">02 / Experiments</p>
+        <h1 className="room-title page-wordmark room-wordmark uppercase" data-room-light>
           Experiments
         </h1>
-        <p className="room-lede mt-6 max-w-[52ch] text-lg">
+        <p className="room-lede mt-4 max-w-[52ch] text-lg">
           Creative coding, GSAP animations, Three.js scenes and interactive prototypes.
         </p>
       </div>
-      <div className="grid gap-x-10 gap-y-16 md:grid-cols-2">
-        {experiments.map(({ slug, title, description, tags, Demo }) => (
-          <article key={slug} className="room-card flex flex-col gap-4 rounded-sm p-5 sm:p-6" data-reveal>
-            <div className="room-card-cover aspect-[16/10] overflow-hidden rounded-sm">
-              <Demo />
-            </div>
-            <h2 className="text-2xl font-semibold">{title}</h2>
-            <p className="max-w-[55ch] text-muted-foreground">{description}</p>
-            <ul className="flex flex-wrap gap-2" aria-label="Tags">
-              {tags.map((t) => (
-                <li key={t}>
-                  <Badge variant="secondary">{t}</Badge>
-                </li>
-              ))}
-            </ul>
-          </article>
+      <div className="flex flex-col gap-10">
+        {experiments.map((e, i) => (
+          <ExperimentCard key={e.slug} experiment={e} index={i} />
         ))}
-        <div className="flex items-center" data-reveal>
-          <UnderConstruction title="More experiments loading...">
-            The lab is mid-experiment. Something may explode, but it will be the good kind of explosion. Probably.
-          </UnderConstruction>
-        </div>
       </div>
+      <NextUp from={experiments.length + 1} slots={OPEN_SLOTS} />
     </RoomPage>
   );
 }
