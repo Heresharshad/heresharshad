@@ -6,8 +6,8 @@ import { world, type WorldState } from "@/components/world/store";
 import { site } from "@/config/site";
 
 /**
- * The first visit's loader: the studio in the dark, a cord and a warming
- * filament where the pendant will hang, and a line of real status, until the
+ * The first visit's loader: the studio in the dark, a warming filament where
+ * the pendant will hang, and a line of real status, until the
  * world has drawn its first complete frame of the studio. Then the dark lifts
  * outward from the bulb and the camera's opening drift begins.
  *
@@ -120,7 +120,6 @@ export function IntroCurtain() {
   return (
     <>
       <div ref={ref} id="intro" className="intro" suppressHydrationWarning>
-        <span className="intro-cord" aria-hidden="true" />
         <span className="intro-bulb" aria-hidden="true" />
         <div className="intro-panel">
           <p className="intro-brand">{site.handle}</p>
